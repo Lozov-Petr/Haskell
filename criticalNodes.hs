@@ -5,41 +5,41 @@ type Path  = [Node]
 
 criticalNodes :: Graph -> Node -> Node -> [Node]
 criticalNodes graph a b = case allPaths graph a b of
-					      x:xs -> foldl (//) (init $ tail x) xs  
-					      []   -> []
-					      where
+                          x:xs -> foldl (//) (init $ tail x) xs  
+                          []   -> []
+                          where
 
-	(//) :: [Node] -> [Node] -> [Node]
-	a // b = filter (\x -> elem x b) a 
+    (//) :: [Node] -> [Node] -> [Node]
+    a // b = filter (\x -> elem x b) a 
 
-	allPaths :: Graph -> Node -> Node -> [Path]
-	allPaths graph a b = genPaths [[a]] where
-		
-		genPaths :: [Path] -> [Path]
-		genPaths [] = []
-		genPaths p  = good ++ genPaths bad where
-			(good,bad) = separationPaths $ filter notCicle $ newPaths p
-		
-		newPaths :: [Path] -> [Path]
-		newPaths = concat . map (\path@(x:_) -> map (:path) $ allNeighbors graph x) where
+    allPaths :: Graph -> Node -> Node -> [Path]
+    allPaths graph a b = genPaths [[a]] where
+        
+        genPaths :: [Path] -> [Path]
+        genPaths [] = []
+        genPaths p  = good ++ genPaths bad where
+            (good,bad) = separationPaths $ filter notCicle $ newPaths p
+        
+        newPaths :: [Path] -> [Path]
+        newPaths = concat . map (\path@(x:_) -> map (:path) $ allNeighbors graph x) where
 
-			allNeighbors :: Graph -> Node -> [Node]
-			allNeighbors graph n = foldl choiceNeighbor [] graph where
-				
-				choiceNeighbor :: [Node] -> Arc -> [Node]
-				choiceNeighbor acc (x,y) | x == n = y:acc
-				                         | y == n = x:acc
-			                             | True   =   acc
+            allNeighbors :: Graph -> Node -> [Node]
+            allNeighbors graph n = foldl choiceNeighbor [] graph where
+                
+                choiceNeighbor :: [Node] -> Arc -> [Node]
+                choiceNeighbor acc (x,y) | x == n = y:acc
+                                         | y == n = x:acc
+                                         | True   =   acc
 
-		separationPaths :: [Path] -> ([Path], [Path])
-		separationPaths = foldl goodOrBad ([],[]) where
-			
-			goodOrBad :: ([Path], [Path]) -> Path -> ([Path], [Path])
-			goodOrBad (good,bad) p@(x:_) | x == b = (p:good,bad)
-										 | True   = (good,p:bad)
+        separationPaths :: [Path] -> ([Path], [Path])
+        separationPaths = foldl goodOrBad ([],[]) where
+            
+            goodOrBad :: ([Path], [Path]) -> Path -> ([Path], [Path])
+            goodOrBad (good,bad) p@(x:_) | x == b = (p:good,bad)
+                                         | True   = (good,p:bad)
 
-		notCicle :: Path -> Bool
-		notCicle (x:xs) = notElem x xs
+        notCicle :: Path -> Bool
+        notCicle (x:xs) = notElem x xs
 
 graph1 :: Graph
 graph1 = [(2,3),(1,2),(3,1),(4,3),(4,6),(5,6),(5,3)]
