@@ -4,30 +4,41 @@ import System.IO
 
 type Z = Integer 
 
-type D = Z
+data D = Z Z 
+       | S (V -> Maybe D)
+       | A (Z -> Maybe D)
 
 type V = String
 
-data E = Var V   | Num D
+data E = Var V   | Num Z
        | Add E E | Sub E E
        | Mul E E | Div E E
        | Eql E E | NEq E E 
        | Grt E E | Les E E
        | GoE E E | LoE E E
        | And E E | Or  E E
-       | Mod E E | EOF
+       | Mod E E 
+
+       | EOF
+       
+       | Struct [(V, E)]
+       | ElemS  E V
+
+       | Array   [(Z, E)]
+       | ElemA   E Z
+       | CreateA E
 
 data S = Skip
        | Write  E
        | Read   V
-       | Assign V E
+       | Assign E E
        | Sq     S S
        | IfTE   E S S
        | While  E S
 
 data P = Program S
 
-type State = V -> Maybe Z
+type State = V -> Maybe D
 
 type C = (State, [Z], [Z]) 
 
@@ -42,7 +53,8 @@ parser str = Program s where
   parserS ("s":  xs ) = (Skip,   xs)
   parserS ("r":x:xs ) = (Read x, xs)
   parserS ("w":  xs0) = (Write e, xs1)      where (e, xs1) = parserE xs0
-  parserS ("=":x:xs0) = (Assign x e, xs1)   where (e, xs1) = parserE xs0 
+  parserS ("="  :xs0) = (Assign e1 e2, xs2) where (e1,xs1) = parserE xs0 
+                                                  (e2,xs2) = parserE xs1
   parserS (";":  xs0) = (Sq s1 s2, xs2)     where (s1,xs1) = parserS xs0
                                                   (s2,xs2) = parserS xs1 
   parserS ("i":  xs0) = (IfTE e s1 s2, xs3) where (e, xs1) = parserE xs0
@@ -80,54 +92,81 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
     interpretS :: S -> Maybe C -> Maybe C
     ---------------------------
     interpretS  Skip            c                = c
-    interpretS (Read v)         (Just (s,n:i,o)) = Just (substitution s v n, i, o)
-    interpretS (Write e)        (Just (s,i,o))   = interpretE i e s >>= (\z -> return (s, i, z:o))
-    interpretS (Assign v e)     (Just (s,i,o))   = interpretE i e s >>= (\z -> return (substitution s v z, i, o))
+    interpretS (Read v)         (Just (s,n:i,o)) = Just (substitution s v $ Z n, i, o)
+    interpretS (Write e)        (Just (s,i,o))   = case interpretE i e s of  
+                                                        (Just (Z z)) -> Just (s, i, z:o)
+                                                        _            -> Nothing
     interpretS (Sq s1 s2)       c1               = interpretS s2 $ interpretS s1 c1
     interpretS (IfTE e s1 s2)   c@(Just (s,i,o)) = interpretE i e s >>= (\z -> case z of
-                                                                                  1 -> interpretS s1 c
-                                                                                  0 -> interpretS s2 c
-                                                                                  _ -> Nothing)
+                                                                                    (Z 1) -> interpretS s1 c
+                                                                                    (Z 0) -> interpretS s2 c
+                                                                                    _     -> Nothing)
     interpretS w@(While e s0)   c@(Just (s,i,o)) = interpretE i e s >>= (\z -> case z of
-                                                                                  1 -> interpretS w $ interpretS s0 c
-                                                                                  0 -> c
-                                                                                  _ -> Nothing)
-    interpretS _                _                = Nothing
+                                                                                    (Z 1) -> interpretS w $ interpretS s0 c
+                                                                                    (Z 0) -> c
+                                                                                    _     -> Nothing)
+    
+    interpretS (Assign (Var v) e)       (Just (s,i,o)) = interpretE i e s >>= (\z -> return (substitution s v z, i, o))
+    interpretS (Assign (ElemS e1 v) e2) (Just (s,i,o)) = interpretE i e2 s >>= update i s e1 (Var v) >>= (\s -> return (s, i, o))
+    interpretS _                        _              = Nothing
 
     ---------------------------
-    substitution :: State -> V -> Z -> State
+    update :: [Z] -> State -> E -> E -> D -> Maybe State
     ---------------------------
-    substitution s v1 z = \v2 -> if v1 == v2 then Just z else s v2
+    update _ s (Var y)        (Var x) v = s y >>= (\d -> case d of
+                                                              S f -> Just . substitution s y . S $ substitution f x v
+                                                              _   -> Nothing)
+    update i s e0@(ElemS e y) (Var x) v = interpretE i e0 s 
+                                              >>= (\d -> case d of
+                                                              S f -> update i s e (Var y) . S $ substitution f x v
+                                                              _   -> Nothing)
+
+
+    ---------------------------    
+    substitution :: Eq a => (a -> Maybe D) -> a -> D -> (a -> Maybe D)
+    ---------------------------
+    substitution s a1 d = \a2 -> if a1 == a2 then Just d else s a2
 
     ---------------------------
-    interpretE :: [Z] -> E -> State -> Maybe Z
+    interpretE :: [Z] -> E -> State -> Maybe D
     ---------------------------
-    interpretE _  (Num z)  _ = Just z
+    interpretE _  (Num z)  _ = Just $ Z z
     interpretE _  (Var v)  s = s v
-    interpretE [] (EOF)    _ = Just 1
-    interpretE _  (EOF)    _ = Just 0 
+    interpretE [] (EOF)    _ = Just $ Z 1
+    interpretE _  (EOF)    _ = Just $ Z 0 
 
-    interpretE i  (Add a b) s = interpretO ((Just .) . (+))     i s a b
-    interpretE i  (Sub a b) s = interpretO ((Just .) . (-))     i s a b
-    interpretE i  (Mul a b) s = interpretO ((Just .) . (*))     i s a b
+    interpretE i (Add a b) s = interpretO ((Just .) . (+))     i s a b
+    interpretE i (Sub a b) s = interpretO ((Just .) . (-))     i s a b
+    interpretE i (Mul a b) s = interpretO ((Just .) . (*))     i s a b
 
-    interpretE i  (Eql a b) s = interpretO (boolToMaybeZ (==))  i s a b
-    interpretE i  (NEq a b) s = interpretO (boolToMaybeZ (/=))  i s a b
-    interpretE i  (Grt a b) s = interpretO (boolToMaybeZ (>) )  i s a b
-    interpretE i  (GoE a b) s = interpretO (boolToMaybeZ (>=))  i s a b
-    interpretE i  (Les a b) s = interpretO (boolToMaybeZ (<) )  i s a b
-    interpretE i  (LoE a b) s = interpretO (boolToMaybeZ (<=))  i s a b
+    interpretE i (Eql a b) s = interpretO (boolToMaybeZ (==))  i s a b
+    interpretE i (NEq a b) s = interpretO (boolToMaybeZ (/=))  i s a b
+    interpretE i (Grt a b) s = interpretO (boolToMaybeZ (>) )  i s a b
+    interpretE i (GoE a b) s = interpretO (boolToMaybeZ (>=))  i s a b
+    interpretE i (Les a b) s = interpretO (boolToMaybeZ (<) )  i s a b
+    interpretE i (LoE a b) s = interpretO (boolToMaybeZ (<=))  i s a b
 
-    interpretE i  (Div a b) s = interpretO (funWithoutZero div) i s a b
-    interpretE i  (Mod a b) s = interpretO (funWithoutZero mod) i s a b
+    interpretE i (Div a b) s = interpretO (funWithoutZero div) i s a b
+    interpretE i (Mod a b) s = interpretO (funWithoutZero mod) i s a b
 
-    interpretE i  (And a b) s = interpretO  semAnd              i s a b
-    interpretE i  (Or  a b) s = interpretO  semOr               i s a b
+    interpretE i (And a b) s = interpretO  semAnd              i s a b
+    interpretE i (Or  a b) s = interpretO  semOr               i s a b
+
+    interpretE i (Struct l) s = foldl update state l >>= return . S where
+      update jf (v,e) = jf >>= (\f -> interpretE i e s >>= return . substitution f v)
+      state = Just $ \_ -> Nothing
+
+    interpretE i (ElemS e v) s = interpretE i e s >>= (\d -> case d of
+                                                                  (S struct) -> struct v
+                                                                  _          -> Nothing)
     
     ---------------------------
-    interpretO :: (Z -> Z -> Maybe Z) -> [Z] -> State -> E -> E -> Maybe Z
+    interpretO :: (Z -> Z -> Maybe Z) -> [Z] -> State -> E -> E -> Maybe D
     ---------------------------
-    interpretO op i s a b = interpretE i a s >>= (\x -> interpretE i b s >>= op x) 
+    interpretO op i s a b = case (interpretE i a s, interpretE i b s) of
+                                 (Just (Z x), Just (Z y)) -> op x y >>= return . Z
+                                 _                        -> Nothing
+
 
     ---------------------------
     boolToMaybeZ :: (Z -> Z -> Bool) -> Z -> Z -> Maybe Z
@@ -177,6 +216,20 @@ showE  :: String -> E -> String
 showE _ (Num a) = "(N)--" ++ show a
 showE _ (Var s) = "(V)--" ++ s
 showE _ (EOF)   = "EOF"
+
+showE s (ElemS e v) = "(.)--" ++  showE (s ++ "|    ") e ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ v
+
+showE s (Struct [])         = "(Struct)"
+showE s (Struct ((v,e):[])) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e 
+  where newS = s ++ "          "
+showE s (Struct ((v,e):l )) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l
+  where newS = s ++ "|         "
+        showTail ((v,e):[]) = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e where
+          newS = s ++ "   "
+        showTail ((v,e):l)  = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where
+          newS = s ++ "|  "
+
+
 showE s x = case x of
           Mul l r -> showOp "*"  l r
           Div l r -> showOp "/"  l r
@@ -199,15 +252,15 @@ showE s x = case x of
 ---------------------------
 showS  :: String -> S -> String
 ---------------------------
-showS _ (Skip)       = "[Skip]"
-showS s (Write e)    = "[Write]--" ++ showE (s ++ "         ") e
-showS _ (Read v)     = "[Read]--" ++ "[V]--" ++ v
-showS s (Assign v e) = "[:=]--" ++ "[V]--" ++ v ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e
-showS s (Sq s1 s2)   = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
-showS s (IfTE e t f) = "[If]--" ++ showE (s ++ "|     ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
-                       "<Then>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++ 
-                       "<Else>--" ++ showS (s ++ "        ") f
-showS s (While e b)  = "[While]--" ++ showE (s ++ "|        ") e ++ "\n" ++ s ++ "|\n" ++ s ++ showS s b
+showS _ (Skip)         = "[Skip]"
+showS s (Write e)      = "[Write]--" ++ showE (s ++ "         ") e
+showS _ (Read v)       = "[Read]--[V]--" ++ v
+showS s (Assign e1 e2) = "[:=]--" ++ showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e2
+showS s (Sq s1 s2)     = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
+showS s (IfTE e t f)   = "[If]--" ++ showE (s ++ "|     ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
+                         "<Then>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++ 
+                         "<Else>--" ++ showS (s ++ "        ") f
+showS s (While e b)    = "[While]--" ++ showE (s ++ "|        ") e ++ "\n" ++ s ++ "|\n" ++ s ++ showS s b
 
 -- main -----------------------------------------------------------------------------------
 
@@ -232,12 +285,12 @@ interpretInFile str i = openFile str ReadMode >>= hGetContents >>= putStr . show
 
 factsP = Program (Sq (Sq (Sq 
                         (Read "number") 
-                        (Assign "fact" (Num 1))) 
-                        (Assign "index" (Num 1))) 
+                        (Assign (Var "fact") (Num 1))) 
+                        (Assign (Var "index") (Num 1))) 
                         (While (LoE (Var "index") (Var "number")) 
                           (Sq (Sq
-                            (Assign "fact" (Mul (Var "fact") (Var "index"))) 
-                            (Assign "index" (Add (Var "index") (Num 1))))
+                            (Assign (Var "fact") (Mul (Var "fact") (Var "index"))) 
+                            (Assign (Var "index") (Add (Var "index") (Num 1))))
                               (Write (Var "fact")))))
 
 --read(number)
@@ -263,14 +316,14 @@ fibsP = Program (Sq (Sq (Sq (Sq (Sq (Sq
                       (IfTE (Grt (Var "number") (Num 1)) 
                           (Write (Var "fib2")) 
                           (Skip)))
-                      (Assign "index" (Num 2)))
+                      (Assign (Var "index") (Num 2)))
                       (While (Les (Var "index") (Var "number"))
                         (Sq (Sq (Sq (Sq
-                          (Assign "temp" (Var "fib2"))
-                          (Assign "fib2" (Add (Var "fib2") (Var "fib1"))))
-                          (Assign "fib1" (Var "temp")))
+                          (Assign (Var "temp") (Var "fib2"))
+                          (Assign (Var "fib2") (Add (Var "fib2") (Var "fib1"))))
+                          (Assign (Var "fib1") (Var "temp")))
                           (Write (Var "fib2")))
-                          (Assign "index" (Add (Var "index") (Num 1)))))) 
+                          (Assign (Var "index") (Add (Var "index") (Num 1)))))) 
 
 --read(number)
 --result = 0
@@ -281,11 +334,11 @@ fibsP = Program (Sq (Sq (Sq (Sq (Sq (Sq
 
 revP = Program (Sq (Sq (Sq 
                       (Read "number") 
-                      (Assign "result" (Num 0))) 
+                      (Assign (Var "result") (Num 0))) 
                       (While(NEq (Var "number") (Num 0)) 
                         (Sq 
-                          (Assign "result" (Add (Mul (Var "result") (Num 10)) (Mod (Var "number") (Num 10)))) 
-                          (Assign "number" (Div (Var "number") (Num 10)))))) 
+                          (Assign (Var "result") (Add (Mul (Var "result") (Num 10)) (Mod (Var "number") (Num 10)))) 
+                          (Assign (Var "number") (Div (Var "number") (Num 10)))))) 
                       (Write (Var "result")))
 
 
@@ -302,14 +355,27 @@ revP = Program (Sq (Sq (Sq
 sumDigitP = Program (Sq (Sq (Sq 
                             (Read "number")         
                             (IfTE (Les (Var "number") (Num 0)) 
-                                (Assign "number" (Sub (Num 0) (Var "number")))
+                                (Assign (Var "number") (Sub (Num 0) (Var "number")))
                                 (Skip)))
                             (While (GoE (Var "number") (Num 10))
                               (Sq (Sq
-                                (Assign "temp" (Num 0))
+                                (Assign (Var "temp") (Num 0))
                                 (While (NEq (Var "number") (Num 0))
                                   (Sq 
-                                    (Assign "temp" (Add (Var "temp") (Mod (Var "number") (Num 10))))
-                                    (Assign "number" (Div (Var "number") (Num 10))))))
-                                (Assign "number" (Var "temp")))))
+                                    (Assign (Var "temp") (Add (Var "temp") (Mod (Var "number") (Num 10))))
+                                    (Assign (Var "number") (Div (Var "number") (Num 10))))))
+                                (Assign (Var "number") (Var "temp")))))
                             (Write (Var "number")))
+
+
+--A = {X <- 1, Y <- 1 + 1, Z <- {X <- 3, Z <- 4}}
+--A.Z.X = A.Z.Z + 22
+--write (A.X + A.Y + A.Z.X + A.Z.Z)
+
+structsP = Program (Sq (Sq
+              (Assign (Var "A") (Struct [("X", Num 1),
+                                         ("Y", Add (Num 1) (Num 1)),
+                                         ("Z", Struct [("X", Num 3), 
+                                                       ("Z", Num 4)])]))
+              (Assign (ElemS (ElemS (Var "A") "Z") "X") (Add (ElemS (ElemS (Var "A") "Z") "Z") (Num 22)))) 
+              (Write (Add (Add (ElemS (Var "A") "X") (ElemS (Var "A") "Y")) (Add (ElemS (ElemS (Var "A") "Z") "X") (ElemS (ElemS (Var "A") "Z") "Z")))))
