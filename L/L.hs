@@ -183,14 +183,18 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
       state = Just $ \_ -> Nothing
 
     interpretE i (ElemS e v) s   = interpretE i e  s >>= (\d -> case d of
-                                                                     (S struct) -> struct v
-                                                                     _          -> Nothing)
+                                                    (S struct) -> struct v
+                                                    _          -> Nothing)
 
     interpretE i (ElemA e1 e2) s = interpretE i e1 s >>= (\d -> case d of
-                                                                     (A array)  -> interpretE i e2 s >>= (\d -> case d of
-                                                                                                                     (Z z) -> array z
-                                                                                                                     _     -> Nothing)
-                                                                     _          -> Nothing)
+                                                    (A array)  -> interpretE i e2 s >>= (\d -> case d of
+                                                                                         (Z z) -> array z
+                                                                                         _     -> Nothing)
+                                                    _          -> Nothing)
+
+    interpretE i (CreateA e)   s = interpretE i e s >>= (\d -> case d of
+                                                        (Z z) -> Just . A $ foldl (\f i -> substitution f i (Z 0)) (\_ -> Nothing) [0..z]
+                                                        _     -> Nothing) 
     
     ---------------------------
     interpretO :: (Z -> Z -> Maybe Z) -> [Z] -> State -> E -> E -> Maybe D
@@ -268,6 +272,8 @@ showE s (Array (e:[]))    = "(Array)--[i]--" ++ showE (s ++ "              ") e
 showE s (Array (e:l ))    = "(Array)--[i]--" ++ showE (s ++ "|             ") e ++ showTail l where
     showTail (e:[]) = "\n" ++ s ++ "|\n" ++ s ++ "[i]--" ++ showE (s ++ "     ") e
     showTail (e:l)  = "\n" ++ s ++ "|\n" ++ s ++ "[i]--" ++ showE (s ++ "|    ") e ++ showTail l
+
+showE s (CreateA e)       = "(CreateA)--" ++ showE (s ++ "           ") e
 
 
 
@@ -423,7 +429,7 @@ structsP = Program (Sq (Sq
               (Write (Add (Add (ElemS (Var "A") "X") (ElemS (Var "A") "Y")) (Add (ElemS (ElemS (Var "A") "Z") "X") (ElemS (ElemS (Var "A") "Z") "Z")))))
 
 --read(N)
---all = {array <- {1,2,1+2}, index = 123, index <- 1, sum <- 0}
+--all = {array <- [1,2,1+2], index = 123, index <- 1, sum <- 0}
 --all.array[9 / 2] = N * 2
 --while (all.index <= 4)
 --   all.sum = all.sum + all.array[all.index - 1]
@@ -445,3 +451,48 @@ arraysP = Program (Sq (Sq (Sq (Sq
             (Assign (ElemS (Var "all") "index") (Add (ElemS (Var "all") "index") (Num 1))))))
 
         (Write (ElemS (Var "all") "sum")))
+
+
+--arr = {get = [], length = 0}
+--while (1 - EOF)
+--    read(N)
+--    arr.get[arr.length] = N
+--    arr.length = arr.length + 1
+--I = 0;
+--while (I < arr.length - 1)
+--    J = I + 1
+--    while (J < arr.length)
+--        if (arr.get[I] > arr.get[J])
+--            temp = arr.get[I]
+--            arr.get[I] = arr.get[J]
+--            arr.get[J] = temp
+--        J = J + 1
+--    I = I + 1
+--I = 0
+--while (I < arr.length)
+--    write(arr.get[I])
+--    I = I + 1
+
+sortP = Program (Sq (Sq (Sq (Sq (Sq
+        (Assign (Var "arr") (Struct [("get", Array []), ("length", Num 0)]))
+        (While (Sub (Num 1) EOF) (Sq (Sq
+            (Read "N")
+            (Assign (ElemA (ElemS (Var "arr") "get") (ElemS (Var "arr") "length")) (Var "N")))
+            (Assign (ElemS (Var "arr") "length") (Add (ElemS (Var "arr") "length") (Num 1))))))
+        (Assign (Var "I") (Num 0)))
+        (While (Les (Var "I") (Sub (ElemS (Var "arr") "length") (Num 1))) (Sq (Sq
+            (Assign (Var "J") (Add (Var "I") (Num 1)))
+            (While (Les (Var "J") (ElemS (Var "arr") "length")) (Sq 
+                (IfTE (Grt (ElemA (ElemS (Var "arr") "get") (Var "I")) (ElemA (ElemS (Var "arr") "get") (Var "J"))) (Sq (Sq
+                    (Assign (Var "temp") (ElemA (ElemS (Var "arr") "get") (Var "I")))
+                    (Assign (ElemA (ElemS (Var "arr") "get") (Var "I")) (ElemA (ElemS (Var "arr") "get") (Var "J"))))
+                    (Assign (ElemA (ElemS (Var "arr") "get") (Var "J")) (Var "temp")))
+
+                    (Skip))
+                (Assign (Var "J") (Add (Var "J") (Num 1))))))
+            (Assign (Var "I") (Add (Var "I") (Num 1))))))
+        (Assign (Var "I") (Num 0)))
+        (While (Les (Var "I") (ElemS (Var "arr") "length")) (Sq 
+            (Write (ElemA (ElemS (Var "arr") "get") (Var "I")))
+            (Assign (Var "I") (Add (Var "I") (Num 1))))))
+
