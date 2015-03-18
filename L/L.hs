@@ -24,8 +24,8 @@ data E = Var V   | Num Z
        | Struct [(V, E)]
        | ElemS  E V
 
-       | Array   [(Z, E)]
-       | ElemA   E Z
+       | Array   [E]
+       | ElemA   E E
        | CreateA E
 
 data S = Skip
@@ -106,21 +106,43 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
                                                                                     (Z 0) -> c
                                                                                     _     -> Nothing)
     
-    interpretS (Assign (Var v) e)       (Just (s,i,o)) = interpretE i e s >>= (\z -> return (substitution s v z, i, o))
-    interpretS (Assign (ElemS e1 v) e2) (Just (s,i,o)) = interpretE i e2 s >>= update i s e1 (Var v) >>= (\s -> return (s, i, o))
+    interpretS (Assign (Var v) e)        (Just (s,i,o)) = interpretE i e s >>= (\z -> return (substitution s v z, i, o))
+    interpretS (Assign (ElemS e1 v ) e2) (Just (s,i,o)) = interpretE i e2 s >>= update i s e1 (Var v) >>= (\s -> return (s, i, o))
+    interpretS (Assign (ElemA e1 e2) e3) (Just (s,i,o)) = interpretE i e3 s 
+                                                      >>= (\d -> interpretE i e2 s 
+                                                      >>= (\n -> case n of
+                                                                      (Z z) -> update i s e1 (Num z) d
+                                                                      _     -> Nothing 
+                                                      >>= (\s -> return (s, i, o))))
     interpretS _                        _              = Nothing
 
     ---------------------------
     update :: [Z] -> State -> E -> E -> D -> Maybe State
     ---------------------------
     update _ s (Var y)        (Var x) v = s y >>= (\d -> case d of
-                                                              S f -> Just . substitution s y . S $ substitution f x v
+                                                    S f -> Just . substitution s y . S $ substitution f x v
+                                                    _   -> Nothing)
+    update _ s (Var y)        (Num n) v = s y >>= (\d -> case d of
+                                                    A f -> Just . substitution s y . A $ substitution f n v
+                                                    _   -> Nothing)
+    update i s e0@(ElemA e1 e2) (Var x) v = interpretE i e0 s  >>= (\d -> case d of
+                                                                     S f -> interpretE i e2 s >>= (\d -> case d of
+                                                                                (Z z) -> update i s e1 (Num z) . S $ substitution f x v
+                                                                                _     -> Nothing)
+                                                                     _   -> Nothing)  
+    update i s e0@(ElemA e1 e2) (Num n) v = interpretE i e0 s  >>= (\d -> case d of
+                                                                     A f -> interpretE i e2 s >>= (\d -> case d of
+                                                                                (Z z) -> update i s e1 (Num z) . A $ substitution f n v
+                                                                                _     -> Nothing)
+                                                                     _   -> Nothing)   
+    update i s e0@(ElemS e y) (Num n) v = interpretE i e0 s 
+                                              >>= (\d -> case d of
+                                                              A f -> update i s e (Var y) . A $ substitution f n v
                                                               _   -> Nothing)
     update i s e0@(ElemS e y) (Var x) v = interpretE i e0 s 
                                               >>= (\d -> case d of
                                                               S f -> update i s e (Var y) . S $ substitution f x v
                                                               _   -> Nothing)
-
 
     ---------------------------    
     substitution :: Eq a => (a -> Maybe D) -> a -> D -> (a -> Maybe D)
@@ -156,9 +178,19 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
       update jf (v,e) = jf >>= (\f -> interpretE i e s >>= return . substitution f v)
       state = Just $ \_ -> Nothing
 
-    interpretE i (ElemS e v) s = interpretE i e s >>= (\d -> case d of
-                                                                  (S struct) -> struct v
-                                                                  _          -> Nothing)
+    interpretE i (Array l) s = foldl update state (zip [0..toInteger (length l) - 1] l) >>= Just . A where
+      update jf (n,e) = jf >>= (\f -> interpretE i e s >>= return . substitution f n)
+      state = Just $ \_ -> Nothing
+
+    interpretE i (ElemS e v) s   = interpretE i e  s >>= (\d -> case d of
+                                                                     (S struct) -> struct v
+                                                                     _          -> Nothing)
+
+    interpretE i (ElemA e1 e2) s = interpretE i e1 s >>= (\d -> case d of
+                                                                     (A array)  -> interpretE i e2 s >>= (\d -> case d of
+                                                                                                                     (Z z) -> array z
+                                                                                                                     _     -> Nothing)
+                                                                     _          -> Nothing)
     
     ---------------------------
     interpretO :: (Z -> Z -> Maybe Z) -> [Z] -> State -> E -> E -> Maybe D
@@ -217,17 +249,27 @@ showE _ (Num a) = "(N)--" ++ show a
 showE _ (Var s) = "(V)--" ++ s
 showE _ (EOF)   = "EOF"
 
-showE s (ElemS e v) = "(.)--" ++  showE (s ++ "|    ") e ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ v
+showE s (ElemS e v)   = "(.)--"  ++  showE (s ++ "|    ")  e  ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ v
+
+showE s (ElemA e1 e2) = "([])--" ++  showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ showE s e2
 
 showE s (Struct [])         = "(Struct)"
-showE s (Struct ((v,e):[])) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e 
-  where newS = s ++ "          "
-showE s (Struct ((v,e):l )) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l
-  where newS = s ++ "|         "
-        showTail ((v,e):[]) = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e where
-          newS = s ++ "   "
-        showTail ((v,e):l)  = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where
-          newS = s ++ "|  "
+showE s (Struct ((v,e):[])) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e where 
+  newS = s ++ "          "
+showE s (Struct ((v,e):l )) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where 
+  newS = s ++ "|         "
+  showTail ((v,e):[]) = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e where
+    newS = s ++ "   "
+  showTail ((v,e):l)  = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where
+    newS = s ++ "|  "
+
+showE s (Array [])        = "(Array)"
+showE s (Array (e:[]))    = "(Array)--[i]--" ++ showE (s ++ "              ") e
+showE s (Array (e:l ))    = "(Array)--[i]--" ++ showE (s ++ "|             ") e ++ showTail l where
+    showTail (e:[]) = "\n" ++ s ++ "|\n" ++ s ++ "[i]--" ++ showE (s ++ "     ") e
+    showTail (e:l)  = "\n" ++ s ++ "|\n" ++ s ++ "[i]--" ++ showE (s ++ "|    ") e ++ showTail l
+
+
 
 
 showE s x = case x of
@@ -379,3 +421,27 @@ structsP = Program (Sq (Sq
                                                        ("Z", Num 4)])]))
               (Assign (ElemS (ElemS (Var "A") "Z") "X") (Add (ElemS (ElemS (Var "A") "Z") "Z") (Num 22)))) 
               (Write (Add (Add (ElemS (Var "A") "X") (ElemS (Var "A") "Y")) (Add (ElemS (ElemS (Var "A") "Z") "X") (ElemS (ElemS (Var "A") "Z") "Z")))))
+
+--read(N)
+--all = {array <- {1,2,1+2}, index = 123, index <- 1, sum <- 0}
+--all.array[9 / 2] = N * 2
+--while (all.index <= 4)
+--   all.sum = all.sum + all.array[all.index - 1]
+--   all.index = all.index + 1
+--write(all.sum)
+
+arraysP = Program (Sq (Sq (Sq (Sq
+
+        (Read "N")
+        (Assign (Var "all") (Struct [("array", (Array [Num 1, Num 2, Add (Num 1) (Num 2)])), 
+                                     ("index", Num 123), 
+                                     ("index", Num 1),
+                                     ("sum", Num 0)])))
+        (Assign (ElemA (ElemS (Var "all") "array") (Div (Num 6) (Num 2))) (Mul (Var "N") (Num 2))))
+
+        (While (LoE (ElemS (Var "all") "index") (Num 4)) (Sq
+            (Assign (ElemS (Var "all") "sum") 
+               (Add (ElemS (Var "all") "sum") (ElemA (ElemS (Var "all") "array") (Sub (ElemS (Var "all") "index") (Num 1)))))
+            (Assign (ElemS (Var "all") "index") (Add (ElemS (Var "all") "index") (Num 1))))))
+
+        (Write (ElemS (Var "all") "sum")))
