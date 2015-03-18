@@ -30,7 +30,7 @@ data E = Var V   | Num Z
 
 data S = Skip
        | Write  E
-       | Read   V
+       | Read   E
        | Assign E E
        | Sq     S S
        | IfTE   E S S
@@ -54,8 +54,8 @@ parser str = Program s where
 
   parserS :: [String] -> (S, [String])
   parserS ("s":  xs ) = (Skip,   xs)
-  parserS ("r":x:xs ) = (Read x, xs)
-  parserS ("w":  xs0) = (Write e, xs1)      where (e, xs1) = parserE xs0
+  parserS ("r"  :xs0) = (Read e, xs1)       where (e, xs1) = parserE xs0 
+  parserS ("w"  :xs0) = (Write e, xs1)      where (e, xs1) = parserE xs0
   parserS ("="  :xs0) = (Assign e1 e2, xs2) where (e1,xs1) = parserE xs0 
                                                   (e2,xs2) = parserE xs1
   parserS (";":  xs0) = (Sq s1 s2, xs2)     where (s1,xs1) = parserS xs0
@@ -120,7 +120,7 @@ interpret (Program p) i = getResult . interpretS p $ (\_ -> Nothing, i, []) wher
     interpretS :: S -> C -> Maybe C
     ---------------------------
     interpretS  Skip          c         = Just c
-    interpretS (Read v)       (s,n:i,o) = Just (substitution s v $ Z n, i, o)
+    interpretS (Read e)       (s,n:i,o) = interpretS (Assign e (Num n)) (s,i,o)--Just (substitution s v $ Z n, i, o)
     interpretS (Write e)      (s,i,o)   = interpretE i e s  
                                       >>= unZ 
                                       >>= \z -> return (s, i, z:o)  
@@ -338,7 +338,7 @@ showS  :: String -> S -> String
 ---------------------------
 showS _ (Skip)         = "[Skip]"
 showS s (Write e)      = "[Write]--" ++ showE (s ++ "         ") e
-showS _ (Read v)       = "[Read]--[V]--" ++ v
+showS s (Read e)       = "[Read]--" ++ showE (s ++ "        ") e
 showS s (Assign e1 e2) = "[:=]--" ++ showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e2
 showS s (Sq s1 s2)     = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
 showS s (IfTE e t f)   = "[If]--" ++ showE (s ++ "|     ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
@@ -370,7 +370,7 @@ interpretInFile str i = openFile str ReadMode >>= hGetContents >>= putStr . show
 --     write(fact)
 
 factsP = Program (Sq (Sq (Sq 
-                        (Read "number") 
+                        (Read (Var "number")) 
                         (Assign (Var "fact") (Num 1))) 
                         (Assign (Var "index") (Num 1))) 
                         (While (LoE (Var "index") (Var "number")) 
@@ -393,9 +393,9 @@ factsP = Program (Sq (Sq (Sq
 --    index = index + 1
 
 fibsP = Program (Sq (Sq (Sq (Sq (Sq (Sq 
-                      (Read "number")
-                      (Read "fib1"))
-                      (Read "fib2"))
+                      (Read (Var "number"))
+                      (Read (Var "fib1")))
+                      (Read (Var "fib2")))
                       (IfTE (Grt (Var "number") (Num 0)) 
                           (Write (Var "fib1")) 
                           (Skip)))
@@ -419,7 +419,7 @@ fibsP = Program (Sq (Sq (Sq (Sq (Sq (Sq
 --write(result) 
 
 revP = Program (Sq (Sq (Sq 
-                      (Read "number") 
+                      (Read (Var "number")) 
                       (Assign (Var "result") (Num 0))) 
                       (While(NEq (Var "number") (Num 0)) 
                         (Sq 
@@ -439,7 +439,7 @@ revP = Program (Sq (Sq (Sq
 --write(number)
 
 sumDigitP = Program (Sq (Sq (Sq 
-                            (Read "number")         
+                            (Read (Var "number"))         
                             (IfTE (Les (Var "number") (Num 0)) 
                                 (Assign (Var "number") (Sub (Num 0) (Var "number")))
                                 (Skip)))
@@ -476,7 +476,7 @@ structsP = Program (Sq (Sq
 
 arraysP = Program (Sq (Sq (Sq (Sq
 
-        (Read "N")
+        (Read (Var "N"))
         (Assign (Var "all") (Struct [("array", (Array [Num 1, Num 2, Add (Num 1) (Num 2)])), 
                                      ("index", Num 123), 
                                      ("index", Num 1),
@@ -493,8 +493,7 @@ arraysP = Program (Sq (Sq (Sq (Sq
 
 --arr = {get = [], length = 0}
 --while (1 - EOF)
---    read(N)
---    arr.get[arr.length] = N
+--    read(arr.get[arr.length])
 --    arr.length = arr.length + 1
 --I = 0;
 --while (I < arr.length - 1)
@@ -513,9 +512,8 @@ arraysP = Program (Sq (Sq (Sq (Sq
 
 sortP = Program (Sq (Sq (Sq (Sq (Sq
         (Assign (Var "arr") (Struct [("get", Array []), ("length", Num 0)]))
-        (While (Sub (Num 1) EOF) (Sq (Sq
-            (Read "N")
-            (Assign (ElemA (ElemS (Var "arr") "get") (ElemS (Var "arr") "length")) (Var "N")))
+        (While (Sub (Num 1) EOF) (Sq
+            (Read (ElemA (ElemS (Var "arr") "get") (ElemS (Var "arr") "length")))
             (Assign (ElemS (Var "arr") "length") (Add (ElemS (Var "arr") "length") (Num 1))))))
         (Assign (Var "I") (Num 0)))
         (While (Les (Var "I") (Sub (ElemS (Var "arr") "length") (Num 1))) (Sq (Sq
