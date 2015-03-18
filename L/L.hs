@@ -353,7 +353,9 @@ printInFile :: String -> IO ()
 ---------------------------
 printInFile str = openFile str ReadMode >>= hGetContents >>= putStr . show . parser
 
-interpretInFile :: String -> [Z] -> IO ()
+---------------------------
+interpretInFile :: String -> Input -> IO ()
+---------------------------
 interpretInFile str i = openFile str ReadMode >>= hGetContents >>= putStr . show . (\p -> interpret p i) . parser
 
 
