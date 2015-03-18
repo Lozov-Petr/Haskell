@@ -531,3 +531,91 @@ sortP = Program (Sq (Sq (Sq (Sq (Sq
         (While (Les (Var "I") (ElemS (Var "arr") "length")) (Sq 
             (Write (ElemA (ElemS (Var "arr") "get") (Var "I")))
             (Assign (Var "I") (Add (Var "I") (Num 1))))))
+
+
+--read(N)
+--read(M)
+--read(K)
+--m1 = []
+--I = 0
+--while (I < N)
+--    J = 0
+--    m1[I] = []
+--    while (J < M)
+--        read(m1[I][J])
+--        J = J + 1
+--    I = I + 1
+--m2 = []        
+--I = 0
+--while (I < M)
+--    J = 0
+--    m2[I] = []
+--    while (J < K)
+--        read(m[I][J])
+--        J = J + 1
+--    I = I + 1
+--m3 = []
+--I = 0
+--while (I < N)
+--    J = 0
+--    m3[I] = createA(K)
+--    while (J < K)
+--        S = 0
+--        while (S < M)
+--            m3[I][J] = m3[I][J] + m1[I][S] * m2[S][J]
+--            S = S + 1
+--        J = J + 1
+--    I = I + 1
+--I = 0
+--while (I < N)
+--    J = 0
+--    while (J < K)
+--        write (m3[I][J])
+--        J = J + 1
+--    I = I + 1
+
+mulMatrP = Program (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq
+              (Read (Var "N")) 
+              (Read (Var "M")))
+              (Read (Var "K")))
+              (Assign (Var "m1") (Array [])))
+              (Assign (Var "I") (Num 0)))
+              (While (Les (Var "I") (Var "N")) (Sq (Sq (Sq
+                  (Assign (Var "J") (Num 0))
+                  (Assign (ElemA (Var "m1") (Var "I")) (Array [])))
+                  (While (Les (Var "J") (Var "M")) (Sq
+                      (Read (ElemA (ElemA (Var "m1") (Var "I")) (Var "J")))
+                      (Assign (Var "J") (Add (Var "J") (Num 1))))))
+                  (Assign (Var "I") (Add (Var "I") (Num 1))))))
+              (Assign (Var "m2") (Array [])))
+              (Assign (Var "I") (Num 0)))
+              (While (Les (Var "I") (Var "M")) (Sq (Sq (Sq
+                  (Assign (Var "J") (Num 0))
+                  (Assign (ElemA (Var "m2") (Var "I")) (Array [])))
+                  (While (Les (Var "J") (Var "K")) (Sq
+                      (Read (ElemA (ElemA (Var "m2") (Var "I")) (Var "J")))
+                      (Assign (Var "J") (Add (Var "J") (Num 1))))))
+                  (Assign (Var "I") (Add (Var "I") (Num 1))))))
+              (Assign (Var "m3") (Array [])))
+              (Assign (Var "I") (Num 0)))
+              (While (Les (Var "I") (Var "N")) (Sq (Sq (Sq
+                  (Assign (Var "J") (Num 0))
+                  (Assign (ElemA (Var "m3") (Var "I")) (CreateA (Var "K"))))
+                  (While (Les (Var "J") (Var "K")) (Sq (Sq
+                      (Assign (Var "S") (Num 0))
+                      (While (Les (Var "S") (Var "M")) (Sq
+                          (Assign (ElemA (ElemA (Var "m3") (Var "I")) (Var "J")) 
+                            (Add  (ElemA (ElemA (Var "m3") (Var "I")) (Var "J")) 
+                            (Mul  (ElemA (ElemA (Var "m1") (Var "I")) (Var "S")) 
+                                  (ElemA (ElemA (Var "m2") (Var "S")) (Var "J")))))
+                          (Assign (Var "S") (Add (Var "S") (Num 1))))))
+                      (Assign (Var "J") (Add (Var "J") (Num 1))))))
+                  (Assign (Var "I") (Add (Var "I") (Num 1))))))       
+              (Assign (Var "I") (Num 0)))
+              (While (Les (Var "I") (Var "N")) (Sq (Sq
+                  (Assign (Var "J") (Num 0))
+                  (While (Les (Var "J") (Var "K")) (Sq
+                      (Write (ElemA (ElemA (Var "m3") (Var "I")) (Var "J")))
+                      (Assign (Var "J") (Add (Var "J") (Num 1))))))
+                  (Assign (Var "I") (Add (Var "I") (Num 1))))))
+
