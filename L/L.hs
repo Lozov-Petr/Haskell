@@ -291,7 +291,7 @@ showE _ (EOF)   = "EOF"
 
 showE s (ElemS e v)   = "(.)--"  ++  showE (s ++ "|    ")  e  ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ v
 
-showE s (ElemA e1 e2) = "([])--" ++  showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ showE s e2
+showE s (ElemA e1 e2) = "([])--" ++  showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ showE (s ++ "     ") e2
 
 showE s (Struct [])         = "(Struct)"
 showE s (Struct ((v,e):[])) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e where 
