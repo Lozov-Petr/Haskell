@@ -89,60 +89,91 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
     getResult  _              = Nothing
 
     ---------------------------
+    unZ :: D -> Maybe Z
+    ---------------------------
+    unZ (Z z) = Just z
+    unZ  _    = Nothing
+ 
+    ---------------------------
+    unS :: D -> Maybe (V -> Maybe D)
+    ---------------------------
+    unS (S s) = Just s
+    unS  _    = Nothing
+
+    ---------------------------
+    unA :: D -> Maybe (Z -> Maybe D)
+    ---------------------------
+    unA (A a) = Just a
+    unA  _    = Nothing
+
+    ---------------------------
+    ifTEforZ :: D -> Maybe a -> Maybe a -> Maybe a
+    ---------------------------
+    ifTEforZ (Z 1) a _ = a
+    ifTEforZ (Z 0) _ b = b
+    ifTEforZ  _    _ _ = Nothing
+
+    ---------------------------
     interpretS :: S -> Maybe C -> Maybe C
     ---------------------------
-    interpretS  Skip            c                = c
-    interpretS (Read v)         (Just (s,n:i,o)) = Just (substitution s v $ Z n, i, o)
-    interpretS (Write e)        (Just (s,i,o))   = case interpretE i e s of  
-                                                        (Just (Z z)) -> Just (s, i, z:o)
-                                                        _            -> Nothing
-    interpretS (Sq s1 s2)       c1               = interpretS s2 $ interpretS s1 c1
-    interpretS (IfTE e s1 s2)   c@(Just (s,i,o)) = interpretE i e s >>= (\z -> case z of
-                                                                                    (Z 1) -> interpretS s1 c
-                                                                                    (Z 0) -> interpretS s2 c
-                                                                                    _     -> Nothing)
-    interpretS w@(While e s0)   c@(Just (s,i,o)) = interpretE i e s >>= (\z -> case z of
-                                                                                    (Z 1) -> interpretS w $ interpretS s0 c
-                                                                                    (Z 0) -> c
-                                                                                    _     -> Nothing)
+    interpretS  Skip          c                = c
+    interpretS (Read v)       (Just (s,n:i,o)) = Just (substitution s v $ Z n, i, o)
+    interpretS (Write e)      (Just (s,i,o))   = interpretE i e s  
+                                             >>= unZ 
+                                             >>= \z -> return (s, i, z:o)  
     
-    interpretS (Assign (Var v) e)        (Just (s,i,o)) = interpretE i e s >>= (\z -> return (substitution s v z, i, o))
-    interpretS (Assign (ElemS e1 v ) e2) (Just (s,i,o)) = interpretE i e2 s >>= update i s e1 (Var v) >>= (\s -> return (s, i, o))
+    interpretS (Sq s1 s2)     c1               = interpretS s2 $ interpretS s1 c1
+    interpretS (IfTE e s1 s2) c@(Just (s,i,o)) = interpretE i e s 
+                                             >>= \d -> ifTEforZ d (interpretS s1 c) (interpretS s2 c)
+    
+    interpretS w@(While e s0) c@(Just (s,i,o)) = interpretE i e s 
+                                             >>= \d -> ifTEforZ d (interpretS w $ interpretS s0 c) c                                                      
+    
+    interpretS (Assign (Var v) e)        (Just (s,i,o)) = interpretE i e s 
+                                                      >>= \z -> return (substitution s v z, i, o)
+    
+    interpretS (Assign (ElemS e1 v ) e2) (Just (s,i,o)) = interpretE i e2 s 
+                                                      >>= update i s e1 (Var v) 
+                                                      >>= \s -> return (s, i, o)
+    
     interpretS (Assign (ElemA e1 e2) e3) (Just (s,i,o)) = interpretE i e3 s 
-                                                      >>= (\d -> interpretE i e2 s 
-                                                      >>= (\n -> case n of
-                                                                      (Z z) -> update i s e1 (Num z) d
-                                                                      _     -> Nothing 
-                                                      >>= (\s -> return (s, i, o))))
+                                                      >>= \d -> interpretE i e2 s 
+                                                      >>= unZ 
+                                                      >>= \z -> update i s e1 (Num z) d
+                                                      >>= \s -> return (s, i, o)
+    
     interpretS _                        _              = Nothing
 
     ---------------------------
     update :: [Z] -> State -> E -> E -> D -> Maybe State
     ---------------------------
-    update _ s (Var y)        (Var x) v = s y >>= (\d -> case d of
-                                                    S f -> Just . substitution s y . S $ substitution f x v
-                                                    _   -> Nothing)
-    update _ s (Var y)        (Num n) v = s y >>= (\d -> case d of
-                                                    A f -> Just . substitution s y . A $ substitution f n v
-                                                    _   -> Nothing)
-    update i s e0@(ElemA e1 e2) (Var x) v = interpretE i e0 s  >>= (\d -> case d of
-                                                                     S f -> interpretE i e2 s >>= (\d -> case d of
-                                                                                (Z z) -> update i s e1 (Num z) . S $ substitution f x v
-                                                                                _     -> Nothing)
-                                                                     _   -> Nothing)  
-    update i s e0@(ElemA e1 e2) (Num n) v = interpretE i e0 s  >>= (\d -> case d of
-                                                                     A f -> interpretE i e2 s >>= (\d -> case d of
-                                                                                (Z z) -> update i s e1 (Num z) . A $ substitution f n v
-                                                                                _     -> Nothing)
-                                                                     _   -> Nothing)   
+    update _ s (Var y)        (Var x) v = s y 
+                                      >>= unS 
+                                      >>= \f -> return . substitution s y . S $ substitution f x v
+
+    update _ s (Var y)        (Num n) v = s y 
+                                      >>= unA
+                                      >>= \f -> return . substitution s y . A $ substitution f n v
+    
+    update i s e0@(ElemA e1 e2) (Var x) v = interpretE i e0 s 
+                                        >>= unS 
+                                        >>= \f -> interpretE i e2 s 
+                                        >>= unZ 
+                                        >>= \z -> update i s e1 (Num z) . S $ substitution f x v
+                                                                                
+    update i s e0@(ElemA e1 e2) (Num n) v = interpretE i e0 s 
+                                        >>= unA
+                                        >>= \f -> interpretE i e2 s 
+                                        >>= unZ
+                                        >>= \z -> update i s e1 (Num z) . A $ substitution f n v
+
     update i s e0@(ElemS e y) (Num n) v = interpretE i e0 s 
-                                              >>= (\d -> case d of
-                                                              A f -> update i s e (Var y) . A $ substitution f n v
-                                                              _   -> Nothing)
+                                      >>= unA
+                                      >>= \f -> update i s e (Var y) . A $ substitution f n v
+
     update i s e0@(ElemS e y) (Var x) v = interpretE i e0 s 
-                                              >>= (\d -> case d of
-                                                              S f -> update i s e (Var y) . S $ substitution f x v
-                                                              _   -> Nothing)
+                                      >>= unS
+                                      >>= \f -> update i s e (Var y) . S $ substitution f x v
 
     ---------------------------    
     substitution :: Eq a => (a -> Maybe D) -> a -> D -> (a -> Maybe D)
@@ -182,15 +213,15 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
       update jf (n,e) = jf >>= (\f -> interpretE i e s >>= return . substitution f n)
       state = Just $ \_ -> Nothing
 
-    interpretE i (ElemS e v) s   = interpretE i e  s >>= (\d -> case d of
-                                                    (S struct) -> struct v
-                                                    _          -> Nothing)
+    interpretE i (ElemS e v) s   = interpretE i e  s 
+                               >>= unS 
+                               >>= \struct -> struct v
 
-    interpretE i (ElemA e1 e2) s = interpretE i e1 s >>= (\d -> case d of
-                                                    (A array)  -> interpretE i e2 s >>= (\d -> case d of
-                                                                                         (Z z) -> array z
-                                                                                         _     -> Nothing)
-                                                    _          -> Nothing)
+    interpretE i (ElemA e1 e2) s = interpretE i e1 s 
+                               >>= unA 
+                               >>= \array -> interpretE i e2 s 
+                               >>= unZ
+                               >>= array
 
     interpretE i (CreateA e)   s = interpretE i e s >>= (\d -> case d of
                                                         (Z z) -> Just . A $ foldl (\f i -> substitution f i (Z 0)) (\_ -> Nothing) [0..z]
