@@ -40,7 +40,10 @@ data P = Program S
 
 type State = V -> Maybe D
 
-type C = (State, [Z], [Z]) 
+type Input  = [Z]
+type Output = [Z]
+
+type C = (State, Input, Output) 
 
 -- parser ------------------------------------------------------------------------------
 
@@ -78,12 +81,12 @@ parser str = Program s where
 -- interpret ---------------------------------------------------------------------------
 
 ---------------------------
-interpret :: P -> [Z] -> Maybe [Z]
+interpret :: P -> Input -> Maybe Output
 ---------------------------
-interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, []) where
+interpret (Program p) i = getResult . interpretS p $ (\_ -> Nothing, i, []) where
     
     ---------------------------
-    getResult :: Maybe C -> Maybe [Z]
+    getResult :: Maybe C -> Maybe Output
     ---------------------------    
     getResult (Just (_,[],o)) = Just $ reverse o
     getResult  _              = Nothing
@@ -114,38 +117,40 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
     ifTEforZ  _    _ _ = Nothing
 
     ---------------------------
-    interpretS :: S -> Maybe C -> Maybe C
+    interpretS :: S -> C -> Maybe C
     ---------------------------
-    interpretS  Skip          c                = c
-    interpretS (Read v)       (Just (s,n:i,o)) = Just (substitution s v $ Z n, i, o)
-    interpretS (Write e)      (Just (s,i,o))   = interpretE i e s  
-                                             >>= unZ 
-                                             >>= \z -> return (s, i, z:o)  
+    interpretS  Skip          c         = Just c
+    interpretS (Read v)       (s,n:i,o) = Just (substitution s v $ Z n, i, o)
+    interpretS (Write e)      (s,i,o)   = interpretE i e s  
+                                      >>= unZ 
+                                      >>= \z -> return (s, i, z:o)  
     
-    interpretS (Sq s1 s2)     c1               = interpretS s2 $ interpretS s1 c1
-    interpretS (IfTE e s1 s2) c@(Just (s,i,o)) = interpretE i e s 
-                                             >>= \d -> ifTEforZ d (interpretS s1 c) (interpretS s2 c)
+    interpretS (Sq s1 s2)     c1        = interpretS s1 c1 
+                                      >>= interpretS s2
+
+    interpretS (IfTE e s1 s2) c@(s,i,o) = interpretE i e s 
+                                      >>= \d -> ifTEforZ d (interpretS s1 c) (interpretS s2 c)
     
-    interpretS w@(While e s0) c@(Just (s,i,o)) = interpretE i e s 
-                                             >>= \d -> ifTEforZ d (interpretS w $ interpretS s0 c) c                                                      
+    interpretS w@(While e s0) c@((s,i,o)) = interpretE i e s 
+                                        >>= \d -> ifTEforZ d (interpretS s0 c >>= interpretS w) (Just c)                                                      
     
-    interpretS (Assign (Var v) e)        (Just (s,i,o)) = interpretE i e s 
-                                                      >>= \z -> return (substitution s v z, i, o)
+    interpretS (Assign (Var v) e)        (s,i,o) = interpretE i e s 
+                                               >>= \z -> return (substitution s v z, i, o)
     
-    interpretS (Assign (ElemS e1 v ) e2) (Just (s,i,o)) = interpretE i e2 s 
-                                                      >>= update i s e1 (Var v) 
-                                                      >>= \s -> return (s, i, o)
+    interpretS (Assign (ElemS e1 v ) e2) (s,i,o) = interpretE i e2 s 
+                                               >>= update i s e1 (Var v) 
+                                               >>= \s -> return (s, i, o)
     
-    interpretS (Assign (ElemA e1 e2) e3) (Just (s,i,o)) = interpretE i e3 s 
-                                                      >>= \d -> interpretE i e2 s 
-                                                      >>= unZ 
-                                                      >>= \z -> update i s e1 (Num z) d
-                                                      >>= \s -> return (s, i, o)
+    interpretS (Assign (ElemA e1 e2) e3) (s,i,o) = interpretE i e3 s 
+                                               >>= \d -> interpretE i e2 s 
+                                               >>= unZ 
+                                               >>= \z -> update i s e1 (Num z) d
+                                               >>= \s -> return (s, i, o)
     
-    interpretS _                        _              = Nothing
+    interpretS _                        _        = Nothing
 
     ---------------------------
-    update :: [Z] -> State -> E -> E -> D -> Maybe State
+    update :: Input -> State -> E -> E -> D -> Maybe State
     ---------------------------
     update _ s (Var y)        (Var x) v = s y 
                                       >>= unS 
@@ -181,7 +186,7 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
     substitution s a1 d = \a2 -> if a1 == a2 then Just d else s a2
 
     ---------------------------
-    interpretE :: [Z] -> E -> State -> Maybe D
+    interpretE :: Input -> E -> State -> Maybe D
     ---------------------------
     interpretE _  (Num z)  _ = Just $ Z z
     interpretE _  (Var v)  s = s v
@@ -228,7 +233,7 @@ interpret (Program p) i = getResult . interpretS p $ Just (\_ -> Nothing, i, [])
                                                         _     -> Nothing) 
     
     ---------------------------
-    interpretO :: (Z -> Z -> Maybe Z) -> [Z] -> State -> E -> E -> Maybe D
+    interpretO :: (Z -> Z -> Maybe Z) -> Input -> State -> E -> E -> Maybe D
     ---------------------------
     interpretO op i s a b = case (interpretE i a s, interpretE i b s) of
                                  (Just (Z x), Just (Z y)) -> op x y >>= return . Z
@@ -526,4 +531,3 @@ sortP = Program (Sq (Sq (Sq (Sq (Sq
         (While (Les (Var "I") (ElemS (Var "arr") "length")) (Sq 
             (Write (ElemA (ElemS (Var "arr") "get") (Var "I")))
             (Assign (Var "I") (Add (Var "I") (Num 1))))))
-
