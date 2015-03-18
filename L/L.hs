@@ -210,13 +210,9 @@ interpret (Program p) i = getResult . interpretS p $ (\_ -> Nothing, i, []) wher
     interpretE i (And a b) s = interpretO  semAnd              i s a b
     interpretE i (Or  a b) s = interpretO  semOr               i s a b
 
-    interpretE i (Struct l) s = foldl update state l >>= return . S where
-      update jf (v,e) = jf >>= (\f -> interpretE i e s >>= return . substitution f v)
-      state = Just $ \_ -> Nothing
-
-    interpretE i (Array l) s = foldl update state (zip [0..toInteger (length l) - 1] l) >>= Just . A where
-      update jf (n,e) = jf >>= (\f -> interpretE i e s >>= return . substitution f n)
-      state = Just $ \_ -> Nothing
+    interpretE i (Struct l) s = foldl (updateState i s) state l    >>= return . S
+    interpretE i (Array l)  s = foldl (updateState i s) state list >>= return . A where
+      list = zip [0..toInteger (length l) - 1] l
 
     interpretE i (ElemS e v) s   = interpretE i e  s 
                                >>= unS 
@@ -228,10 +224,22 @@ interpret (Program p) i = getResult . interpretS p $ (\_ -> Nothing, i, []) wher
                                >>= unZ
                                >>= array
 
-    interpretE i (CreateA e)   s = interpretE i e s >>= (\d -> case d of
-                                                        (Z z) -> Just . A $ foldl (\f i -> substitution f i (Z 0)) (\_ -> Nothing) [0..z]
-                                                        _     -> Nothing) 
-    
+    interpretE i (CreateA e)   s = interpretE i e s 
+                               >>= unZ 
+                               >>= \z -> Just . A $ foldl (\f i -> substitution f i (Z 0)) (\_ -> Nothing) [0..z]
+
+    ---------------------------
+    state :: Maybe (a -> Maybe b)
+    ---------------------------
+    state = Just $ \_ -> Nothing
+
+    ---------------------------
+    updateState :: Eq a => Input -> State -> Maybe (a -> Maybe D) -> (a, E) -> Maybe (a -> Maybe D)
+    ---------------------------
+    updateState i s jf (a,e) = jf 
+                           >>= \f -> interpretE i e s 
+                           >>= return . substitution f a
+
     ---------------------------
     interpretO :: (Z -> Z -> Maybe Z) -> Input -> State -> E -> E -> Maybe D
     ---------------------------
@@ -291,16 +299,20 @@ showE _ (EOF)   = "EOF"
 
 showE s (ElemS e v)   = "(.)--"  ++  showE (s ++ "|    ")  e  ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ v
 
-showE s (ElemA e1 e2) = "([])--" ++  showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ showE (s ++ "     ") e2
-
+showE s (ElemA e1 e2) = "([])--" ++  showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ 
+                                     showE (s ++ "     ") e2
 showE s (Struct [])         = "(Struct)"
-showE s (Struct ((v,e):[])) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e where 
+showE s (Struct ((v,e):[])) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" 
+                        ++ newS ++ "|\n" ++ newS ++ showE newS e where 
   newS = s ++ "          "
-showE s (Struct ((v,e):l )) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where 
+showE s (Struct ((v,e):l )) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" 
+                        ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where 
   newS = s ++ "|         "
-  showTail ((v,e):[]) = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e where
+  showTail ((v,e):[]) = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" 
+                        ++ newS ++ "|\n" ++ newS ++ showE newS e where
     newS = s ++ "   "
-  showTail ((v,e):l)  = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where
+  showTail ((v,e):l)  = "\n" ++ s ++ "|\n" ++ s ++ "*--[<-]--[V]--" ++ v ++ "\n" 
+                        ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where
     newS = s ++ "|  "
 
 showE s (Array [])        = "(Array)"
@@ -464,7 +476,10 @@ structsP = Program (Sq (Sq
                                          ("Z", Struct [("X", Num 3), 
                                                        ("Z", Num 4)])]))
               (Assign (ElemS (ElemS (Var "A") "Z") "X") (Add (ElemS (ElemS (Var "A") "Z") "Z") (Num 22)))) 
-              (Write (Add (Add (ElemS (Var "A") "X") (ElemS (Var "A") "Y")) (Add (ElemS (ElemS (Var "A") "Z") "X") (ElemS (ElemS (Var "A") "Z") "Z")))))
+              (Write (Add (Add (ElemS (Var "A") "X") 
+                               (ElemS (Var "A") "Y")) 
+                          (Add (ElemS (ElemS (Var "A") "Z") "X") 
+                               (ElemS (ElemS (Var "A") "Z") "Z")))))
 
 --read(N)
 --all = {array <- [1,2,1+2], index = 123, index <- 1, sum <- 0}
