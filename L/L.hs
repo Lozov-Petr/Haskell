@@ -304,10 +304,10 @@ showE s (Struct ((v,e):l )) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" ++ newS ++ "|
     newS = s ++ "|  "
 
 showE s (Array [])        = "(Array)"
-showE s (Array (e:[]))    = "(Array)--[i]--" ++ showE (s ++ "              ") e
-showE s (Array (e:l ))    = "(Array)--[i]--" ++ showE (s ++ "|             ") e ++ showTail l where
-    showTail (e:[]) = "\n" ++ s ++ "|\n" ++ s ++ "[i]--" ++ showE (s ++ "     ") e
-    showTail (e:l)  = "\n" ++ s ++ "|\n" ++ s ++ "[i]--" ++ showE (s ++ "|    ") e ++ showTail l
+showE s (Array (e:[]))    = "(Array)--" ++ showE (s ++ "         ") e
+showE s (Array (e:l ))    = "(Array)--" ++ showE (s ++ "|        ") e ++ showTail l where
+    showTail (e:[]) = "\n" ++ s ++ "|\n" ++ s ++ "*--" ++ showE (s ++ "   ") e
+    showTail (e:l)  = "\n" ++ s ++ "|\n" ++ s ++ "*--" ++ showE (s ++ "|  ") e ++ showTail l
 
 showE s (CreateA e)       = "(CreateA)--" ++ showE (s ++ "           ") e
 
