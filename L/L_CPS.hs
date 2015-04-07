@@ -299,13 +299,13 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty) (Ju
 ----------------------------------------------------------------------------------------
 
 instance Show Elem where
-	show = showElem "label" 
+	show = showElem ""
 
 instance Show E where 
-  show = showE "label"
+  show = showE ""
 
 instance Show S where
-	show = showS "label"
+	show = showS ""
 
 instance Show P where
 	show (Program p) = "Program:\n\n    " ++ showS "    " p ++ "\n" 
