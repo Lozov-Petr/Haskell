@@ -47,12 +47,16 @@ type C = (State, Input, Output)
 
 -- parser ------------------------------------------------------------------------------
 
+---------------------------
 parser :: String -> P
+---------------------------
 parser str = Program s where 
 
   (s, []) = parserS $ lines str
 
+  ---------------------------
   parserS :: [String] -> (S, [String])
+  ---------------------------
   parserS ("s":  xs ) = (Skip,   xs)
   parserS ("r"  :xs0) = (Read e, xs1)       where (e, xs1) = parserE xs0 
   parserS ("w"  :xs0) = (Write e, xs1)      where (e, xs1) = parserE xs0
@@ -66,7 +70,9 @@ parser str = Program s where
   parserS ("l":  xs0) = (While e s, xs2)    where (e, xs1) = parserE xs0
                                                   (s, xs2) = parserS xs1
 
+  ---------------------------
   parserE :: [String] -> (E, [String])
+  ---------------------------
   parserE ("e":  xs ) = (EOF,          xs)
   parserE ("x":x:xs ) = (Var x,        xs)
   parserE ("c":x:xs ) = (Num $ read x, xs)
@@ -226,7 +232,7 @@ interpret (Program p) i = getResult . interpretS p $ (\_ -> Nothing, i, []) wher
 
     interpretE i (CreateA e)   s = interpretE i e s 
                                >>= unZ 
-                               >>= \z -> Just . A $ foldl (\f i -> substitution f i (Z 0)) (\_ -> Nothing) [0..z]
+                               >>= \z -> Just . A $ foldl (\f i -> substitution f i (Z 0)) (\_ -> Nothing) [0..z-1]
 
     ---------------------------
     state :: Maybe (a -> Maybe b)
@@ -295,12 +301,11 @@ showE  :: String -> E -> String
 ---------------------------
 showE _ (Num a) = "(N)--" ++ show a
 showE _ (Var s) = "(V)--" ++ s
-showE _ (EOF)   = "EOF"
+showE _ (EOF)   = "(EOF)"
 
 showE s (ElemS e v)   = "(.)--"  ++  showE (s ++ "|    ")  e  ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ v
 
-showE s (ElemA e1 e2) = "([])--" ++  showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ "[V]--" ++ 
-                                     showE (s ++ "     ") e2
+showE s (ElemA e1 e2) = "([])--" ++  showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e2
 showE s (Struct [])         = "(Struct)"
 showE s (Struct ((v,e):[])) = "(Struct)--[<-]--[V]--" ++ v ++ "\n" 
                         ++ newS ++ "|\n" ++ newS ++ showE newS e where 
@@ -633,4 +638,30 @@ mulMatrP = Program (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq
                       (Write (ElemA (ElemA (Var "m3") (Var "I")) (Var "J")))
                       (Assign (Var "J") (Add (Var "J") (Num 1))))))
                   (Assign (Var "I") (Add (Var "I") (Num 1))))))
+
+
+--arr = {elem = [], length = 0}
+--while (1 - eof)
+--   read(x)
+--   if (x > 0 && x % == 0 || x < 0 && x % 2 == 1)
+--       arr.elem[arr.length] = x
+--       arr.length = arr.length + 1
+--index = 0 
+--while (index < arr.length)
+--    write(arr.elem[index])
+--    index = index + 1
+
+mapP = Program (Sq (Sq (Sq 
+          (Assign (Var "arr") (Struct [("elem", Array []), ("length", Num 0)]))
+          (While (Sub (Num 1) EOF) (Sq
+              (Read (Var "x"))
+              (IfTE (Or (And (Grt (Var "x") (Num 0)) (Eql (Mod (Var "x") (Num 2)) (Num 0))) 
+                        (And (Les (Var "x") (Num 0)) (Eql (Mod (Var "x") (Num 2)) (Num 1)))) (Sq
+                  (Assign (ElemA (ElemS (Var "arr") "elem") (ElemS (Var "arr") "length")) (Var "x"))
+                  (Assign (ElemS (Var "arr") "length") (Add (ElemS (Var "arr") "length") (Num 1))))
+                  (Skip)))))
+          (Assign (Var "index") (Num 0)))
+          (While (Les (Var "index") (ElemS (Var "arr") "length")) (Sq
+              (Write (ElemA (ElemS (Var "arr") "elem") (Var "index")))
+              (Assign (Var "index") (Add (Var "index") (Num 1))))))
 
