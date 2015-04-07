@@ -4,6 +4,7 @@
 
 type Z = Integer
 type V = String
+type L = String
 
 type State a = a -> Maybe D
 
@@ -31,14 +32,14 @@ data E = Num Z   | Var V
 
 data S = Skip
        | Abort
-    -- | Break
-    -- | Continue
+       | Break L
+       | Continue L
        | Write  E
        | Read   Elem
        | Assign Elem E
        | Sq     S S
-       | IfTE   E S S
-       | While  E S
+       | IfTE   L E S S
+       | While  L E S
 
 data Elem = EV V
           | EA Elem E
@@ -53,6 +54,8 @@ type C = (State V, Input, Output)
 
 type K = Maybe S
 
+data Gamma = G K (L -> Maybe Gamma) (L -> Maybe Gamma)
+
 
 ----------------------------------------------------------------------------------------
 -- INTERPRET ---------------------------------------------------------------------------
@@ -61,7 +64,7 @@ type K = Maybe S
 ---------------------------
 interpretP :: P -> Input -> Maybe Output
 ---------------------------
-interpretP (Program p) i = interpretS (state, i, []) Nothing (Just p)  
+interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty) (Just p)  
                        >>= getResult where
     
     ---------------------------                   
@@ -72,41 +75,57 @@ interpretP (Program p) i = interpretS (state, i, []) Nothing (Just p)
 
 
     ---------------------------    
-    interpretS :: C -> K -> Maybe S -> Maybe C
+    interpretS :: C -> Gamma -> Maybe S -> Maybe C
     ---------------------------
-    interpretS c           Nothing  Nothing       = Just c
-    interpretS c           k (Just  Skip )        = interpretS c Nothing k
-    interpretS (s,i,o)     k (Just (Write e))     = interpretE i s e
-                                                >>= unZ
-                                                >>= \z -> interpretS (s,i,z:o) Nothing k
-    interpretS c           k (Just (Sq l r))      = interpretS c (addInK r k) $ Just l
-    interpretS c@(s,i,o)   k (Just (IfTE e l r))  = interpretE i s e
-                                                >>= \d -> ifTEforZ d (interpretS c k $ Just l) 
-                                                                      (interpretS c k $ Just r)
-    interpretS c@(s,i,o)   k (Just w@(While e b)) = interpretE i s e
-                                                >>= \d -> ifTEforZ d (interpretS c (addInK w k) $ Just b)
-                                                                       (interpretS c Nothing k)
-    interpretS c@(s,z:i,o) k (Just (Read ae))     = update i s ae (Z z)
-                                                >>= \s1 -> interpretS (s1,i,o) Nothing k
+    interpretS c             (G Nothing _ _)  Nothing           = Just c
+    interpretS c             (G k br cn) (Just  Skip)           = interpretS c (G Nothing br cn) k
+    interpretS (s,i,o)       (G k br cn) (Just (Write e))       = interpretE i s e
+                                                              >>= unZ
+                                                              >>= \z -> interpretS (s,i,z:o) (G Nothing br cn) k
+    interpretS c             (G k br cn) (Just (Sq l r))        = interpretS c (G (addInK r k) br cn) $ Just l
+    interpretS c@(s,i,o)   g@(G k br cn) (Just (IfTE l e a b))  = interpretE i s e
+                                                              >>= \d -> ifTEforZ d (interpretS c g' $ Just a) 
+                                                                                   (interpretS c g' $ Just b)
+                                                                   where k'  = addInK (Break l) k
+                                                                         br' = substitution br l $ Just g
+                                                                         cn' = substitution cn l Nothing
+                                                                         g' = G k' br' cn'
+    interpretS c@(s,i,o)   g@(G k br cn) (Just w@(While l e b)) = interpretE i s e
+                                                              >>= \d -> ifTEforZ d (interpretS c g' $ Just b)
+                                                                                   (interpretS c (G Nothing br cn) k)
+                                                                   where kw  = addInK w k
+                                                                         k'  = addInK (Continue l) k
+                                                                         br' = substitution br l $ Just g
+                                                                         cn' = substitution cn l . Just $ G kw br cn
+                                                                         g'  = G k' br' cn'
 
-    interpretS c@(s,i,o)   k (Just (Assign ae e)) = interpretE i s e
-                                                >>= update i s ae
-                                                >>= \s1 -> interpretS (s1,i,o) Nothing k
-    interpretS _           _  _                   = Nothing
+    interpretS c           g@(G _ br _ ) (Just (Break l))       = br l
+                                                              >>= \(G k' br' cn') -> interpretS c (G Nothing br' cn') k'
+
+    interpretS c           g@(G _ _  cn) (Just (Continue l))    = cn l
+                                                              >>= \(G k' br' cn') -> interpretS c (G Nothing br' cn') k'
+
+    interpretS c@(s,z:i,o)   (G k br cn) (Just (Read ae))       = update i s ae (Z z)
+                                                              >>= \s1 -> interpretS (s1,i,o) (G Nothing br cn) k
+
+    interpretS c@(s,i,o)     (G k br cn) (Just (Assign ae e))   = interpretE i s e
+                                                              >>= update i s ae
+                                                              >>= \s1 -> interpretS (s1,i,o) (G Nothing br cn) k
+    interpretS _           _  _                                 = Nothing
 
 
     ---------------------------
     update :: Input -> State V -> Elem -> D -> Maybe (State V)
     ---------------------------
-    update _ s (EV v)    d = Just $ substitution s v d
+    update _ s (EV v)    d = Just $ substitution s v $ Just d
     update i s (ES ae v) d = elemS i s ae
                           >>= unS
-                          >>= \state -> update i s ae (S $ substitution state v d)
+                          >>= \struct -> update i s ae (S . substitution struct v $ Just d)
     update i s (EA ae e) d = elemS i s ae
                           >>= unA
                           >>= \array -> interpretE i s e
                           >>= unZ
-                          >>= \z -> update i s ae (A $ substitution array z d)
+                          >>= \z -> update i s ae (A . substitution array z $ Just d)
 
 
     ---------------------------
@@ -157,9 +176,9 @@ interpretP (Program p) i = interpretS (state, i, []) Nothing (Just p)
 
 
     ---------------------------
-    substitution :: Eq a => (a -> Maybe D) -> a -> D -> (a -> Maybe D)
+    substitution :: Eq a => (a -> Maybe b) -> a -> Maybe b -> (a -> Maybe b)
     ---------------------------
-    substitution f a1 d = \a2 -> if a1 == a2 then Just d else f a2 
+    substitution f a1 d = \a2 -> if a1 == a2 then d else f a2 
 
 
     ---------------------------
@@ -190,7 +209,7 @@ interpretP (Program p) i = interpretS (state, i, []) Nothing (Just p)
 
     interpretE i  s (CreateA e)   = interpretE i s e
                                 >>= unZ
-                                >>= \z -> Just . A $ foldl (\f i -> substitution f i (Z 0)) state [0..z-1]
+                                >>= \z -> Just . A $ foldl (\f i -> substitution f i (Just $ Z 0)) empty [0..z-1]
 
     interpretE i  s (ElemS e v)   = interpretE i s e 
                                 >>= unS 
@@ -257,9 +276,9 @@ interpretP (Program p) i = interpretS (state, i, []) Nothing (Just p)
 
 
     ---------------------------
-    state :: State a
+    empty :: a -> Maybe b
     ---------------------------
-    state = \_ -> Nothing
+    empty = \_ -> Nothing
 
 
     ---------------------------
@@ -267,26 +286,26 @@ interpretP (Program p) i = interpretS (state, i, []) Nothing (Just p)
     ---------------------------
     updateState i s acc (a, e) = acc
                              >>= \f -> interpretE i s e 
-                             >>= return . substitution f a
+                             >>= return . substitution f a . Just
 
 
     ---------------------------
     createState :: Eq a => Input -> State V -> [(a, E)] -> Maybe (State a)
     ---------------------------
-    createState i s = foldl (updateState i s) $ Just state
+    createState i s = foldl (updateState i s) $ Just empty
 
 ----------------------------------------------------------------------------------------
 -- SHOW --------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 
 instance Show Elem where
-	show = showElem "" 
+	show = showElem "label" 
 
 instance Show E where 
-  show = showE ""
+  show = showE "label"
 
 instance Show S where
-	show = showS ""
+	show = showS "label"
 
 instance Show P where
 	show (Program p) = "Program:\n\n    " ++ showS "    " p ++ "\n" 
@@ -349,16 +368,21 @@ showE s x = case x of
 ---------------------------
 showS  :: String -> S -> String
 ---------------------------
-showS _ (Abort)        = "[Abort]"
-showS _ (Skip)         = "[Skip]"
-showS s (Write e)      = "[Write]--" ++ showE (s ++ "         ") e
-showS s (Read ae)       = "[Read]--" ++ showElem (s ++ "        ") ae
-showS s (Assign ae e) = "[:=]--" ++ showElem (s ++ "|     ") ae ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e
-showS s (Sq s1 s2)     = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
-showS s (IfTE e t f)   = "[If]--" ++ showE (s ++ "|     ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
-                         "<Then>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++ 
-                         "<Else>--" ++ showS (s ++ "        ") f
-showS s (While e b)    = "[While]--" ++ showE (s ++ "|        ") e ++ "\n" ++ s ++ "|\n" ++ s ++ showS s b
+showS _ (Abort)          = "[Abort]"
+showS _ (Skip)           = "[Skip]"
+showS _ (Continue l)     = "[Continue]--<Label>--" ++ l
+showS _ (Break l)        = "[Break]--<Label>--" ++ l
+showS s (Write e)        = "[Write]--" ++ showE (s ++ "         ") e
+showS s (Read ae)        = "[Read]--" ++ showElem (s ++ "        ") ae
+showS s (Assign ae e)    = "[:=]--" ++ showElem (s ++ "|     ") ae ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e
+showS s (Sq s1 s2)       = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
+showS s (IfTE l e t f)   = "[If]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
+                           "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
+                           "<Then>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++ 
+                           "<Else>--" ++ showS (s ++ "        ") f
+showS s (While l e b)    = "[While]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
+                           "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++  s ++
+                           "<Body>--" ++ showS (s ++ "        ") b
 
 showElem :: String -> Elem -> String
 showElem _ (EV v)    = "{V}--" ++ v
@@ -382,11 +406,31 @@ factsP = Program (Sq (Sq (Sq
                         (Read (EV "number")) 
                         (Assign (EV "fact") (Num 1))) 
                         (Assign (EV "index") (Num 1))) 
-                        (While (LoE (Var "index") (Var "number")) 
+                        (While "label" (LoE (Var "index") (Var "number")) 
                           (Sq (Sq
                             (Assign (EV "fact") (Mul (Var "fact") (Var "index"))) 
                             (Assign (EV "index") (Add (Var "index") (Num 1))))
                               (Write (Var "fact")))))
+
+-- read(number)
+-- fact = 1
+-- index = 1
+-- while (1)
+--     if (index <= number) break
+--     fact = fact * index
+--     index = index + 1
+--     write(fact)
+
+facts2P = Program (Sq (Sq (Sq 
+                        (Read (EV "number")) 
+                        (Assign (EV "fact") (Num 1))) 
+                        (Assign (EV "index") (Num 1))) 
+                        (While "label" (Num 1) 
+                          (Sq (Sq (Sq
+                            (IfTE "label1" (Grt (Var "index") (Var "number")) (Break "label") (Skip))
+                            (Assign (EV "fact") (Mul (Var "fact") (Var "index")))) 
+                            (Assign (EV "index") (Add (Var "index") (Num 1))))
+                            (Write (Var "fact")))))
 
 --read(number)
 --read(fib1)
@@ -405,14 +449,14 @@ fibsP = Program (Sq (Sq (Sq (Sq (Sq (Sq
                       (Read (EV "number"))
                       (Read (EV "fib1")))
                       (Read (EV "fib2")))
-                      (IfTE (Grt (Var "number") (Num 0)) 
+                      (IfTE "label" (Grt (Var "number") (Num 0)) 
                           (Write (Var "fib1")) 
                           (Skip)))
-                      (IfTE (Grt (Var "number") (Num 1)) 
+                      (IfTE "label" (Grt (Var "number") (Num 1)) 
                           (Write (Var "fib2")) 
                           (Skip)))
                       (Assign (EV "index") (Num 2)))
-                      (While (Les (Var "index") (Var "number"))
+                      (While "label" (Les (Var "index") (Var "number"))
                         (Sq (Sq (Sq (Sq
                           (Assign (EV "temp") (Var "fib2"))
                           (Assign (EV "fib2") (Add (Var "fib2") (Var "fib1"))))
@@ -430,10 +474,10 @@ fibsP = Program (Sq (Sq (Sq (Sq (Sq (Sq
 
 revP = Program (Sq (Sq (Sq (Sq 
                       (Read (EV "number"))
-                      (IfTE (Or (Eql (Mod (Var "number") (Num 10)) (Num 0)) 
+                      (IfTE "label" (Or (Eql (Mod (Var "number") (Num 10)) (Num 0)) 
                       	        (Les (Var "number") (Num 0))) (Abort) (Skip)))
                       (Assign (EV "result") (Num 0))) 
-                      (While(NEq (Var "number") (Num 0)) 
+                      (While "label"(NEq (Var "number") (Num 0)) 
                         (Sq 
                           (Assign (EV "result") (Add (Mul (Var "result") (Num 10)) (Mod (Var "number") (Num 10)))) 
                           (Assign (EV "number") (Div (Var "number") (Num 10)))))) 
@@ -452,13 +496,13 @@ revP = Program (Sq (Sq (Sq (Sq
 
 sumDigitP = Program (Sq (Sq (Sq 
                             (Read (EV "number"))         
-                            (IfTE (Les (Var "number") (Num 0)) 
+                            (IfTE "label" (Les (Var "number") (Num 0)) 
                                 (Assign (EV "number") (Sub (Num 0) (Var "number")))
                                 (Skip)))
-                            (While (GoE (Var "number") (Num 10))
+                            (While "label" (GoE (Var "number") (Num 10))
                               (Sq (Sq
                                 (Assign (EV "temp") (Num 0))
-                                (While (NEq (Var "number") (Num 0))
+                                (While "label" (NEq (Var "number") (Num 0))
                                   (Sq 
                                     (Assign (EV "temp") (Add (Var "temp") (Mod (Var "number") (Num 10))))
                                     (Assign (EV "number") (Div (Var "number") (Num 10))))))
@@ -498,7 +542,7 @@ arraysP = Program (Sq (Sq (Sq (Sq
                                     ("sum", Num 0)])))
         (Assign (EA (ES (EV "all") "array") (Div (Num 6) (Num 2))) (Mul (Var "N") (Num 2))))
 
-        (While (LoE (ElemS (Var "all") "index") (Num 4)) (Sq
+        (While "label" (LoE (ElemS (Var "all") "index") (Num 4)) (Sq
             (Assign (ES (EV "all") "sum") 
                (Add (ElemS (Var "all") "sum") (ElemA (ElemS (Var "all") "array") (Sub (ElemS (Var "all") "index") (Num 1)))))
             (Assign (ES (EV "all") "index") (Add (ElemS (Var "all") "index") (Num 1))))))
@@ -527,14 +571,14 @@ arraysP = Program (Sq (Sq (Sq (Sq
 
 sortP = Program (Sq (Sq (Sq (Sq (Sq
         (Assign (EV "arr") (Struct [("get", Array []), ("length", Num 0)]))
-        (While (Sub (Num 1) EOF) (Sq
+        (While "label" (Sub (Num 1) EOF) (Sq
             (Read (EA (ES (EV "arr") "get") (ElemS (Var "arr") "length")))
             (Assign (ES (EV "arr") "length") (Add (ElemS (Var "arr") "length") (Num 1))))))
         (Assign (EV "I") (Num 0)))
-        (While (Les (Var "I") (Sub (ElemS (Var "arr") "length") (Num 1))) (Sq (Sq
+        (While "label" (Les (Var "I") (Sub (ElemS (Var "arr") "length") (Num 1))) (Sq (Sq
             (Assign (EV "J") (Add (Var "I") (Num 1)))
-            (While (Les (Var "J") (ElemS (Var "arr") "length")) (Sq 
-                (IfTE (Grt (ElemA (ElemS (Var "arr") "get") (Var "I")) (ElemA (ElemS (Var "arr") "get") (Var "J"))) (Sq (Sq
+            (While "label" (Les (Var "J") (ElemS (Var "arr") "length")) (Sq 
+                (IfTE "label" (Grt (ElemA (ElemS (Var "arr") "get") (Var "I")) (ElemA (ElemS (Var "arr") "get") (Var "J"))) (Sq (Sq
                     (Assign (EV "temp") (ElemA (ElemS (Var "arr") "get") (Var "I")))
                     (Assign (EA (ES (EV "arr") "get") (Var "I")) (ElemA (ElemS (Var "arr") "get") (Var "J"))))
                     (Assign (EA (ES (EV "arr") "get") (Var "J")) (Var "temp")))
@@ -543,7 +587,7 @@ sortP = Program (Sq (Sq (Sq (Sq (Sq
                 (Assign (EV "J") (Add (Var "J") (Num 1))))))
             (Assign (EV "I") (Add (Var "I") (Num 1))))))
         (Assign (EV "I") (Num 0)))
-        (While (Les (Var "I") (ElemS (Var "arr") "length")) (Sq 
+        (While "label" (Les (Var "I") (ElemS (Var "arr") "length")) (Sq 
             (Write (ElemA (ElemS (Var "arr") "get") (Var "I")))
             (Assign (EV "I") (Add (Var "I") (Num 1))))))
 
@@ -595,30 +639,30 @@ mulMatrP = Program (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq
               (Read (EV "K")))
               (Assign (EV "m1") (Array [])))
               (Assign (EV "I") (Num 0)))
-              (While (Les (Var "I") (Var "N")) (Sq (Sq (Sq
+              (While "label" (Les (Var "I") (Var "N")) (Sq (Sq (Sq
                   (Assign (EV "J") (Num 0))
                   (Assign (EA (EV "m1") (Var "I")) (Array [])))
-                  (While (Les (Var "J") (Var "M")) (Sq
+                  (While "label" (Les (Var "J") (Var "M")) (Sq
                       (Read (EA (EA (EV "m1") (Var "I")) (Var "J")))
                       (Assign (EV "J") (Add (Var "J") (Num 1))))))
                   (Assign (EV "I") (Add (Var "I") (Num 1))))))
               (Assign (EV "m2") (Array [])))
               (Assign (EV "I") (Num 0)))
-              (While (Les (Var "I") (Var "M")) (Sq (Sq (Sq
+              (While "label" (Les (Var "I") (Var "M")) (Sq (Sq (Sq
                   (Assign (EV "J") (Num 0))
                   (Assign (EA (EV "m2") (Var "I")) (Array [])))
-                  (While (Les (Var "J") (Var "K")) (Sq
+                  (While "label" (Les (Var "J") (Var "K")) (Sq
                       (Read (EA (EA (EV "m2") (Var "I")) (Var "J")))
                       (Assign (EV "J") (Add (Var "J") (Num 1))))))
                   (Assign (EV "I") (Add (Var "I") (Num 1))))))
               (Assign (EV "m3") (Array [])))
               (Assign (EV "I") (Num 0)))
-              (While (Les (Var "I") (Var "N")) (Sq (Sq (Sq
+              (While "label" (Les (Var "I") (Var "N")) (Sq (Sq (Sq
                   (Assign (EV "J") (Num 0))
                   (Assign (EA (EV "m3") (Var "I")) (CreateA (Var "K"))))
-                  (While (Les (Var "J") (Var "K")) (Sq (Sq
+                  (While "label" (Les (Var "J") (Var "K")) (Sq (Sq
                       (Assign (EV "S") (Num 0))
-                      (While (Les (Var "S") (Var "M")) (Sq
+                      (While "label" (Les (Var "S") (Var "M")) (Sq
                           (Assign (EA (EA (EV "m3") (Var "I")) (Var "J")) 
                             (Add  (ElemA (ElemA (Var "m3") (Var "I")) (Var "J")) 
                             (Mul  (ElemA (ElemA (Var "m1") (Var "I")) (Var "S")) 
@@ -627,9 +671,9 @@ mulMatrP = Program (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq
                       (Assign (EV "J") (Add (Var "J") (Num 1))))))
                   (Assign (EV "I") (Add (Var "I") (Num 1))))))       
               (Assign (EV "I") (Num 0)))
-              (While (Les (Var "I") (Var "N")) (Sq (Sq
+              (While "label" (Les (Var "I") (Var "N")) (Sq (Sq
                   (Assign (EV "J") (Num 0))
-                  (While (Les (Var "J") (Var "K")) (Sq
+                  (While "label" (Les (Var "J") (Var "K")) (Sq
                       (Write (ElemA (ElemA (Var "m3") (Var "I")) (Var "J")))
                       (Assign (EV "J") (Add (Var "J") (Num 1))))))
                   (Assign (EV "I") (Add (Var "I") (Num 1))))))
@@ -647,15 +691,29 @@ mulMatrP = Program (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq (Sq
 
 mapP = Program (Sq (Sq (Sq 
           (Assign (EV "arr") (Struct [("elem", Array []), ("length", Num 0)]))
-          (While (Sub (Num 1) EOF) (Sq
+          (While "label" (Sub (Num 1) EOF) (Sq
               (Read (EV "x"))
-              (IfTE (Or (And (Grt (Var "x") (Num 0)) (Eql (Mod (Var "x") (Num 2)) (Num 0))) 
+              (IfTE "label" (Or (And (Grt (Var "x") (Num 0)) (Eql (Mod (Var "x") (Num 2)) (Num 0))) 
                         (And (Les (Var "x") (Num 0)) (Eql (Mod (Var "x") (Num 2)) (Num 1)))) (Sq
                   (Assign (EA (ES (EV "arr") "elem") (ElemS (Var "arr") "length")) (Var "x"))
                   (Assign (ES (EV "arr") "length") (Add (ElemS (Var "arr") "length") (Num 1))))
                   (Skip)))))
           (Assign (EV "index") (Num 0)))
-          (While (Les (Var "index") (ElemS (Var "arr") "length")) (Sq
+          (While "label" (Les (Var "index") (ElemS (Var "arr") "length")) (Sq
               (Write (ElemA (ElemS (Var "arr") "elem") (Var "index")))
               (Assign (EV "index") (Add (Var "index") (Num 1))))))
+
+
+
+test = Program (Sq (Sq
+              (Assign (EV "x") (Num 8))
+              (While "" (Grt (Var "x") (Num 0)) (Sq (Sq (Sq
+                (While "" (NEq (Mod (Var "x") (Num 5)) (Num 0)) (Sq (Sq
+                  (Write (Var "x"))
+                  (Write (Num $ -3)))
+                  (Assign (EV "x") (Sub (Var "x") (Num 1)))))
+                (Write (Var "x")))
+                (Write (Num $ -2)))
+                (Assign (EV "x") (Sub (Var "x") (Num 2))))))
+              (Write (Num $ -1)))
 
