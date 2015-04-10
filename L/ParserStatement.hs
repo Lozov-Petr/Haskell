@@ -14,25 +14,31 @@ semicolon = symV ';' >> return ()
 ---------------------------
 skipP :: Parser S
 ---------------------------
-skipP = wordV cSkip >> semicolon >> return Skip
+skipP = opt (wordV0 cSkip) >> semicolon >> return Skip
+
+
+---------------------------
+abortP :: Parser S
+---------------------------
+abortP = wordV0 cAbort >> semicolon >> return Abort
 
 
 ---------------------------
 readP :: Parser S
 ---------------------------
-readP = wordV cRead >> symV '(' >> variableWithSuff >>= \e -> symV ')' >> semicolon >> return (Read e)
+readP = wordV0 cRead >> symV '(' >> variableWithSuff >>= \e -> symV ')' >> semicolon >> return (Read e)
 
 
 ---------------------------
 assignP :: Parser S
 ---------------------------
-assignP = variableWithSuff >>= \l -> wordV cEqual >> expr >>= \r -> semicolon >> return (Assign l r)
+assignP = variableWithSuff >>= \l -> wordV0 cEqual >> expr >>= \r -> semicolon >> return (Assign l r)
 
 
 ---------------------------
 writeP :: Parser S
 ---------------------------
-writeP = wordV cWrite >> exprInBrackets >>= \e -> semicolon >> return (Write e)
+writeP = wordV0 cWrite >> exprInBrackets >>= \e -> semicolon >> return (Write e)
 
 
 ---------------------------
@@ -50,39 +56,39 @@ labelWithColon = opt (variableV >>= \l -> symV ':' >> return l) >>= return . unM
 ---------------------------
 breakP :: Parser S
 ---------------------------
-breakP = wordV cBreak >> label >>= return . Break
+breakP = wordV1 cBreak >> label >>= return . Break
 
 
 ---------------------------
 continueP :: Parser S
 ---------------------------
-continueP = wordV cContinue >> label >>= return . Continue
+continueP = wordV1 cContinue >> label >>= return . Continue
 
 
 ---------------------------
 throwP :: Parser S
 ---------------------------
-throwP = wordV cThrow >> expr >>= \e -> semicolon >> return (Throw e)
+throwP = wordV0 cThrow >> exprInBrackets >>= \e -> semicolon >> return (Throw e)
 
 
 ---------------------------
 ifWithoutL :: L -> Parser S
 ---------------------------
-ifWithoutL l = wordV cIf >> expr >>= \e -> wordV cThen >> statement >>=
-	     \tr -> opt (wordV cElse >> statement) >>= return . IfTE l e tr . unMaybe Skip
+ifWithoutL l = wordV1 cIf >> expr >>= \e -> wordV1 cThen >> statement >>=
+	     \tr -> opt (wordV1 cElse >> statement) >>= return . IfTE l e tr . unMaybe Skip
 
 
 ---------------------------
 whileWtihoutL :: L -> Parser S
 ---------------------------
-whileWtihoutL l = wordV cWhile >> expr >>= \e -> wordV cDo >> statement >>= return . While l e
+whileWtihoutL l = wordV1 cWhile >> expr >>= \e -> wordV1 cDo >> statement >>= return . While l e
 
 
 ---------------------------
 tryWithoutL :: L -> Parser S
 ---------------------------
-tryWithoutL l = wordV cTry >> statement >>= \t -> wordV cCatch 
-                           >> constExprInBrackets >>= \e -> statement >>= return . Try l t e
+tryWithoutL l = wordV1 cTry >> statement >>= \t -> wordV0 cCatch 
+                            >> constExprInBrackets >>= \e -> statement >>= return . Try l t e
 
 
 ---------------------------
@@ -107,4 +113,5 @@ statement :: Parser S
 ---------------------------
 statement =  skipP  |!| readP  |!| assignP 
          |!| writeP |!| breakP |!| continueP 
-         |!| throwP |!| sqP    |!| ifOrWhileP 
+         |!| throwP |!| sqP    |!| abortP 
+         |!| ifOrWhileP 

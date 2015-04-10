@@ -15,6 +15,8 @@ cCatch       = "catch"
 
 cThrow       = "throw"
 
+cAbort       = "abort"
+
 cEOF         = "EOF"
 
 cBreak       = "break"
