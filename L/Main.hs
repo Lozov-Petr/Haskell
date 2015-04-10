@@ -1,5 +1,7 @@
 module Main where
 
+import ParserBase (Error)
+import Types (P)
 import Interpret (interpretP)
 import Parser (parser)
 
@@ -18,21 +20,20 @@ main = do putStr "Enter path of file: "
 
           printSeparate
           
-          let tree = parser (code ++ "\n")
-          print tree
+          treeToResult $ parser (code ++ "\n")
 
-          printSeparate
+---------------------------
+treeToResult :: Either P Error -> IO ()
+---------------------------
+treeToResult (Left p) = do print p
+                           printSeparate
+                           parameters <- readParameters
+                           printSeparate
+                           putStrLn . resultToString $ interpretP p parameters
+                           printSeparate
 
-          parameters <- readParameters
-
-          printSeparate
-
-          putStrLn . resultToString $ interpretP tree parameters
-
-          printSeparate
-
-
-
+treeToResult (Right (Just err,i,j)) = do putStr (show (i,j) ++ " Parsing error: " ++ err)
+treeToResult (Right (Nothing, i,j)) = do putStr (show (i,j) ++ " Parsing error: Unknown error")
 ---------------------------
 printSeparate :: IO ()
 ---------------------------
@@ -42,7 +43,13 @@ printSeparate = putStrLn $ map (const '-') [1..30]
 ---------------------------
 shiftCode :: String -> String
 ---------------------------
-shiftCode = unlines . map ("    " ++) . lines
+shiftCode = unlines . map (\(s,n,m) -> "    " ++ zeros n m ++ show n ++ ")  " ++ s) . numberingCode . lines where
+     numberingCode l = zip3 l l' [len | _ <- l'] where l' = [1..len]
+                                                       len = length l
+     
+     zeros n m | n /= 0 = zeros (div n 10) (div m 10)
+               | m /= 0 = '0' : zeros 0 (div m 10)
+               | True   = ""
 
 
 ---------------------------

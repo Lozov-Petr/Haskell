@@ -165,6 +165,6 @@ getExprParser primary list = foldl update (const primary) list $ id where
       p1 = acc id 
       p2 = if assoc == NotAssoc then \e -> p1 >>= return . e else result
       newHole a o = if assoc == LeftAssoc then o $ hole a else hole . (o a)
-      op = foldl (\acc (s, f) -> wordV s >> return f |!| acc) empty list
+      op = foldl1 (flip (|!|)) $ map (\(s,f) -> wordV s >> return f) list
 
 

@@ -29,40 +29,44 @@ elemP = variableV >>= addSuffsS . EV where
 
 
 ---------------------------
+semicolon :: Parser () 
+---------------------------
+semicolon = symV ';' >> return ()
+
+---------------------------
 skipP :: Parser S
 ---------------------------
-skipP = wordV cSkip >> return Skip
+skipP = wordV cSkip >> semicolon >> return Skip
 
 
 ---------------------------
 readP :: Parser S
 ---------------------------
-readP = wordV cRead >> symV '(' >> elemP >>= \e -> symV ')' >> return (Read e)
+readP = wordV cRead >> symV '(' >> elemP >>= \e -> symV ')' >> semicolon >> return (Read e)
 
 
 ---------------------------
 assignP :: Parser S
 ---------------------------
-assignP = elemP >>= \e -> wordV cEqual >> expr >>= return . Assign e
+assignP = elemP >>= \l -> wordV cEqual >> expr >>= \r -> semicolon >> return (Assign l r)
 
 
 ---------------------------
 writeP :: Parser S
 ---------------------------
-writeP = wordV cWrite >> exprInBrackets >>= return . Write
+writeP = wordV cWrite >> exprInBrackets >>= \e -> semicolon >> return (Write e)
 
 
 ---------------------------
 label :: Parser L
 ---------------------------
-label = opt (variableV) >>= return . unMaybe cDefLabel
+label = opt (variableV) >>= \l -> semicolon >> return (unMaybe cDefLabel l)
 
 
 ---------------------------
 labelWithColon :: Parser L
 ---------------------------
 labelWithColon = opt (variableV >>= \l -> symV ':' >> return l) >>= return . unMaybe cDefLabel
-
 
 
 ---------------------------
@@ -80,8 +84,8 @@ continueP = wordV cContinue >> label >>= return . Continue
 ---------------------------
 ifWithoutL :: L -> Parser S
 ---------------------------
-ifWithoutL l = wordV cIf >> expr >>= \e -> wordV cThen >> statement >>= \st -> opt (wordV cElse >> statement) 
-	                                                                   >>= return . IfTE l e st . unMaybe Skip
+ifWithoutL l = wordV cIf >> expr >>= \e -> wordV cThen >> statement >>=
+	     \tr -> opt (wordV cElse >> statement) >>= return . IfTE l e tr . unMaybe Skip
 
 
 ---------------------------
@@ -105,15 +109,15 @@ ifOrWhileP = labelWithColon >>= \l -> ifWithoutL l |!| whileWtihoutL l |!| tryWi
 ---------------------------
 sqP :: Parser S
 ---------------------------
-sqP = symV '{' >> statement >>= \s -> sqTail >>= \t -> symV '}' >> return (Sq s t) where
+sqP = symV '{' >> statements where
     
     ---------------------------
-    sqTail :: Parser S
+    statements :: Parser S
     ---------------------------
-    sqTail = symV ';' >> statement >>= \s -> (sqTail >>= return . Sq s) |!| return s
+    statements = statement >>= \s -> (statements >>= return . Sq s) |!| (symV '}' >> return s)
 
 
 ---------------------------
 statement :: Parser S
 ---------------------------
-statement = skipP |!| readP |!| assignP |!| writeP |!| breakP |!| continueP |!| sqP |!| ifOrWhileP
+statement = skipP |!| readP |!| assignP |!| writeP |!| breakP |!| continueP |!| ifOrWhileP |!| sqP
