@@ -77,31 +77,33 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty empt
 
 
     ---------------------------
-    update :: Input -> State V -> Elem -> D -> Maybe (State V)
+    update :: Input -> State V -> E -> D -> Maybe (State V)
     ---------------------------
-    update _ s (EV v)    d = Just $ substitution s v $ Just d
-    update i s (ES ae v) d = elemS i s ae
-                          >>= unS
-                          >>= \struct -> update i s ae (S . substitution struct v $ Just d)
-    update i s (EA ae e) d = elemS i s ae
-                          >>= unA
-                          >>= \array -> interpretE i s e
-                          >>= unZ
-                          >>= \z -> update i s ae (A . substitution array z $ Just d)
+    update _ s (Var v)     d = Just $ substitution s v $ Just d
+    update i s (ElemS l r) d = elemS i s l
+                           >>= unS
+                           >>= \struct -> update i s l (S . substitution struct r $ Just d)
+    update i s (ElemA l r) d = elemS i s l
+                           >>= unA
+                           >>= \array -> interpretE i s r
+                           >>= unZ
+                           >>= \z -> update i s l (A . substitution array z $ Just d)
+    update _ _  _          _ = Nothing
 
 
     ---------------------------
-    elemS :: Input -> State V -> Elem -> Maybe D
+    elemS :: Input -> State V -> E -> Maybe D
     ---------------------------
-    elemS _ s (EV v)    = s v
-    elemS i s (ES ae v) = elemS i s ae
-                       >>= unS
-                       >>= \struct -> struct v
-    elemS i s (EA ae e) = elemS i s ae
-                       >>= unA
-                       >>= \array -> interpretE i s e
-                       >>= unZ
-                       >>= array
+    elemS _ s (Var v)     = s v
+    elemS i s (ElemS l r) = elemS i s l
+                        >>= unS
+                        >>= \struct -> struct r
+    elemS i s (ElemA l r) = elemS i s l
+                        >>= unA
+                        >>= \array -> interpretE i s l
+                        >>= unZ
+                        >>= array
+    elemS _ _  _          = Nothing
 
     ---------------------------
     ifTEforZ :: D -> Maybe a -> Maybe a -> Maybe a

@@ -5,28 +5,6 @@ import Constants
 import ParserBase
 import ParserExpression
 
----------------------------
-elemP :: Parser Elem
----------------------------
-elemP = variableV >>= addSuffsS . EV where
-
-	---------------------------
-	addArraySuffS :: (E -> Elem) -> Parser Elem
-	---------------------------
-	addArraySuffS h = symV '[' >> expr >>= \e -> symV ']' >> addSuffsS (h e)
-
-
-	---------------------------
-	addStructSuffS :: (V -> Elem) -> Parser Elem
-	---------------------------
-	addStructSuffS h = symV '.' >> variableV >>= \v -> addSuffsS (h v)
-
-
-	---------------------------
-	addSuffsS :: Elem -> Parser Elem
-	---------------------------
-	addSuffsS e = addStructSuffS (ES e) |!| addArraySuffS (EA e) |!| return e
-
 
 ---------------------------
 semicolon :: Parser () 
@@ -42,13 +20,13 @@ skipP = wordV cSkip >> semicolon >> return Skip
 ---------------------------
 readP :: Parser S
 ---------------------------
-readP = wordV cRead >> symV '(' >> elemP >>= \e -> symV ')' >> semicolon >> return (Read e)
+readP = wordV cRead >> symV '(' >> variableWithSuff >>= \e -> symV ')' >> semicolon >> return (Read e)
 
 
 ---------------------------
 assignP :: Parser S
 ---------------------------
-assignP = elemP >>= \l -> wordV cEqual >> expr >>= \r -> semicolon >> return (Assign l r)
+assignP = variableWithSuff >>= \l -> wordV cEqual >> expr >>= \r -> semicolon >> return (Assign l r)
 
 
 ---------------------------
@@ -82,6 +60,12 @@ continueP = wordV cContinue >> label >>= return . Continue
 
 
 ---------------------------
+throwP :: Parser S
+---------------------------
+throwP = wordV cThrow >> expr >>= \e -> semicolon >> return (Throw e)
+
+
+---------------------------
 ifWithoutL :: L -> Parser S
 ---------------------------
 ifWithoutL l = wordV cIf >> expr >>= \e -> wordV cThen >> statement >>=
@@ -97,7 +81,8 @@ whileWtihoutL l = wordV cWhile >> expr >>= \e -> wordV cDo >> statement >>= retu
 ---------------------------
 tryWithoutL :: L -> Parser S
 ---------------------------
-tryWithoutL l = wordV cTry >> statement >>= \t -> wordV cCatch >> exprInBrackets >>= \e -> statement >>= return . Try l t e
+tryWithoutL l = wordV cTry >> statement >>= \t -> wordV cCatch 
+                           >> constExprInBrackets >>= \e -> statement >>= return . Try l t e
 
 
 ---------------------------
@@ -120,4 +105,6 @@ sqP = symV '{' >> statements where
 ---------------------------
 statement :: Parser S
 ---------------------------
-statement = skipP |!| readP |!| assignP |!| writeP |!| breakP |!| continueP |!| ifOrWhileP |!| sqP
+statement =  skipP  |!| readP  |!| assignP 
+         |!| writeP |!| breakP |!| continueP 
+         |!| throwP |!| sqP    |!| ifOrWhileP 

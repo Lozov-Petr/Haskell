@@ -98,9 +98,21 @@ array = symV '[' >> opt (expr >>= \e -> many0 (symV ',' >> expr) >>= return . (e
 
 
 ---------------------------
+getExprInBrackets :: Parser E -> Parser E
+---------------------------
+getExprInBrackets p = symV '(' >> p >>= \e -> symV ')' >> return e
+
+
+---------------------------
 exprInBrackets :: Parser E
 ---------------------------
-exprInBrackets = symV '(' >> expr >>= \e -> symV ')' >> return e
+exprInBrackets = getExprInBrackets expr
+
+
+---------------------------
+constExprInBrackets :: Parser E
+---------------------------
+constExprInBrackets = getExprInBrackets constExpr
 
 
 ---------------------------
@@ -111,9 +123,15 @@ primary =  num    |!| eof |!| array      |!| createArray
 
 
 ---------------------------
-primaryWithSuff :: Parser E
+constPrimary :: Parser E
 ---------------------------
-primaryWithSuff = primary >>= addSuffs where
+constPrimary = num |!| constExprInBrackets
+
+
+---------------------------
+getParserWithSuff :: Parser E -> Parser E
+---------------------------
+getParserWithSuff p = p >>= addSuffs where
 
   ---------------------------
   addArraySuff :: (E -> E) -> Parser E
@@ -134,20 +152,56 @@ primaryWithSuff = primary >>= addSuffs where
 
 
 ---------------------------
+primaryWithSuff :: Parser E
+---------------------------
+primaryWithSuff = getParserWithSuff primary
+
+
+---------------------------
+variableWithSuff :: Parser E
+---------------------------
+variableWithSuff = getParserWithSuff var
+
+
+---------------------------
+getUnary :: Parser E -> Parser E
+---------------------------
+getUnary p = p |!| unary' ("-", Inv) |!| unary' ("!", Not) where
+    unary' (s, f) = voidCompl $ wordV s >> p >>= return . f
+
+
+---------------------------
 unary :: Parser E
 ---------------------------
-unary = primaryWithSuff |!| unary' ("-", Inv) |!| unary' ("!", Not) where
-    unary' (s, f) = voidCompl $ wordV s >> primaryWithSuff >>= return . f
+unary = getUnary primaryWithSuff
+
+
+---------------------------
+constUnary :: Parser E
+---------------------------
+constUnary = getUnary constPrimary
+
+
+---------------------------
+operators :: [([(String, E -> E -> E)], Associativity)]
+---------------------------
+operators = [([("*",Mul),("/",Div),("%",Mod)],LeftAssoc),
+             ([("+",Add),("-",Sub)],LeftAssoc),
+             ([(">",Grt),("<",Les),("<=",LoE),("==",Eql),("!=",NEq),(">=",GoE)],NotAssoc),
+             ([("&&",And)],RightAssoc),
+             ([("||",Or )],RightAssoc)]
+
+
+---------------------------
+constExpr :: Parser E
+---------------------------
+constExpr = getExprParser constUnary operators
 
 
 ---------------------------
 expr :: Parser E
 ---------------------------
-expr = getExprParser unary [([("*",Mul),("/",Div),("%",Mod)],LeftAssoc),
-                            ([("+",Add),("-",Sub)],LeftAssoc),
-                            ([(">",Grt),("<",Les),("<=",LoE),("==",Eql),("!=",NEq),(">=",GoE)],NotAssoc),
-                            ([("&&",And)],RightAssoc),
-                            ([("||",Or )],RightAssoc)]
+expr = getExprParser unary operators
 
 
 ---------------------------
@@ -166,5 +220,3 @@ getExprParser primary list = foldl update (const primary) list $ id where
       p2 = if assoc == NotAssoc then \e -> p1 >>= return . e else result
       newHole a o = if assoc == LeftAssoc then o $ hole a else hole . (o a)
       op = foldl1 (flip (|!|)) $ map (\(s,f) -> wordV s >> return f) list
-
-

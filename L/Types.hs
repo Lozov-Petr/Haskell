@@ -39,17 +39,13 @@ data S = Skip
        | Break    L
        | Continue L
        | Write    E
-       | Read     Elem
-       | Assign   Elem E
+       | Read     E
+       | Assign   E E
        | Sq       S S
        | IfTE     L E S S
        | While    L E S
        | Try      L S E S
        | Throw    E
-
-data Elem = EV V
-          | EA Elem E
-          | ES Elem V
 
 data P = Program S
 
@@ -67,9 +63,6 @@ data Associativity = LeftAssoc | RightAssoc | NotAssoc deriving Eq
 ----------------------------------------------------------------------------------------
 -- SHOW --------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
-
-instance Show Elem where
-      show = showElem ""
 
 instance Show E where 
   show = showE ""
@@ -139,29 +132,23 @@ showE s x = case x of
 ---------------------------
 showS  :: String -> S -> String
 ---------------------------
-showS _ (Abort)          = "[Abort]"
-showS _ (Skip)           = "[Skip]"
-showS _ (Continue l)     = "[Continue]--<Label>--" ++ l
-showS _ (Break l)        = "[Break]--<Label>--" ++ l
-showS s (Throw e)        = "[Throw]--" ++ showE (s ++ "         ") e
-showS s (Write e)        = "[Write]--" ++ showE (s ++ "         ") e
-showS s (Read ae)        = "[Read]--" ++ showElem (s ++ "        ") ae
-showS s (Assign ae e)    = "[:=]--" ++ showElem (s ++ "|     ") ae ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e
-showS s (Sq s1 s2)       = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
-showS s (IfTE l e t f)   = "[If]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
-                           "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
-                           "<Then>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++ 
-                           "<Else>--" ++ showS (s ++ "        ") f
-showS s (While l e b)    = "[While]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
-                           "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++  s ++
-                           "<Body>--" ++ showS (s ++ "        ") b
-showS s (Try l t e c)    = "[Try]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
-                           "<Body>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++
-                           "<Value>--" ++ showE (s ++ "|        ") e ++ "\n" ++ s ++ "|\n" ++ s ++
-                           "<Catch>--" ++ showS (s ++ "         ") c 
-
-
-showElem :: String -> Elem -> String
-showElem _ (EV v)    = "{V}--" ++ v
-showElem s (ES ea v) = "{.}--" ++ showElem (s ++ "|    ") ea ++ "\n" ++ s ++ "|\n" ++ s ++ "{V}--" ++ v
-showElem s (EA ea e) = "{[]}--" ++ showElem (s ++ "|     ") ea ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e
+showS _ (Abort)        = "[Abort]"
+showS _ (Skip)         = "[Skip]"
+showS _ (Continue l)   = "[Continue]--<Label>--" ++ l
+showS _ (Break l)      = "[Break]--<Label>--" ++ l
+showS s (Throw e)      = "[Throw]--" ++ showE (s ++ "         ") e
+showS s (Write e)      = "[Write]--" ++ showE (s ++ "         ") e
+showS s (Read e)       = "[Read]--" ++ showE (s ++ "        ") e
+showS s (Assign e1 e2) = "[:=]--" ++ showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e2
+showS s (Sq s1 s2)     = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
+showS s (IfTE l e t f) = "[If]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
+                         "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
+                         "<Then>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++ 
+                         "<Else>--" ++ showS (s ++ "        ") f
+showS s (While l e b)  = "[While]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
+                         "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++  s ++
+                         "<Body>--" ++ showS (s ++ "        ") b
+showS s (Try l t e c)  = "[Try]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
+                         "<Body>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++
+                         "<Value>--" ++ showE (s ++ "|        ") e ++ "\n" ++ s ++ "|\n" ++ s ++
+                         "<Catch>--" ++ showS (s ++ "         ") c 

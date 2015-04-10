@@ -13,6 +13,8 @@ cWrite       = "write"
 cTry         = "try"
 cCatch       = "catch"
 
+cThrow       = "throw"
+
 cEOF         = "EOF"
 
 cBreak       = "break"

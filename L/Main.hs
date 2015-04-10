@@ -43,13 +43,15 @@ printSeparate = putStrLn $ map (const '-') [1..30]
 ---------------------------
 shiftCode :: String -> String
 ---------------------------
-shiftCode = unlines . map (\(s,n,m) -> "    " ++ zeros n m ++ show n ++ ")  " ++ s) . numberingCode . lines where
-     numberingCode l = zip3 l l' [len | _ <- l'] where l' = [1..len]
-                                                       len = length l
-     
-     zeros n m | n /= 0 = zeros (div n 10) (div m 10)
-               | m /= 0 = '0' : zeros 0 (div m 10)
-               | True   = ""
+shiftCode c = unlines $ zipWith (\n l -> "   " ++ showNumber m n ++ ") " ++ l) [1..n] l where
+  l = lines c
+  n = length l
+  m = length $ show n
+
+---------------------------
+showNumber :: Int -> Int -> String
+---------------------------
+showNumber m n = let s = show n in ['0' | _ <- [1..m - length s]] ++ s
 
 
 ---------------------------
@@ -58,18 +60,19 @@ readParameters :: IO [Integer]
 readParameters = do putStr "Enter count of pareneters: "
                     countStr <- getLine
                     let count = read countStr
-                    pars <- foldl readParameter (return []) [1..count]
+                    let m = length $ show count
+                    pars <- foldl (readParameter m) (return []) [1..count]
                     return $ reverse pars
+                 where
 
-
----------------------------
-readParameter :: IO [Integer] -> Integer -> IO [Integer]
----------------------------
-readParameter acc i = do xs <- acc
-                         putStr $ "Enter parameter " ++ show i ++ ": "
-                         xStr <- getLine
-                         let x = read xStr
-                         return $ x:xs
+  ---------------------------
+  readParameter :: Int -> IO [Integer] -> Int -> IO [Integer]
+  ---------------------------
+  readParameter m acc i = do xs <- acc
+                             putStr $ "Enter parameter " ++ showNumber m i ++ ": "
+                             xStr <- getLine
+                             let x = read xStr
+                             return $ x:xs
 
 
 ---------------------------
