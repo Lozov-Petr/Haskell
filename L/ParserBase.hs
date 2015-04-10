@@ -29,7 +29,7 @@ sym :: Char -> Parser Char
 sym c = P sym' where
   sym' (x:xs,i,j) | c == x = if c == '\n' then Left (x,(xs,i+1,1)) 
                                           else Left (x,(xs,i,j+1))
-  sym' (_   ,i,j)          = Right (Nothing,i,j)              
+  sym' (_   ,i,j)          = Right (Just $ "Expexted " ++ show c,i,j)              
 
 ---------------------------
 infixl 1 |!|

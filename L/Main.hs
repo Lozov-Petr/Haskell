@@ -4,11 +4,15 @@ import ParserBase (Error)
 import Types (P)
 import Interpret (interpretP)
 import Parser (parser)
+import System.IO
 
 ---------------------------
 main :: IO ()
 ---------------------------
-main = do putStr "Enter path of file: "
+main = do hSetBuffering stdout NoBuffering
+
+          putStr "Enter path of file: "
+          
           path <- getLine
           
           printSeparate
@@ -37,7 +41,7 @@ treeToResult (Right (Nothing, i,j)) = do putStr (show (i,j) ++ " Parsing error: 
 ---------------------------
 printSeparate :: IO ()
 ---------------------------
-printSeparate = putStrLn $ map (const '-') [1..30]
+printSeparate = putStrLn $ map (const '-') [1..100]
 
 
 ---------------------------
@@ -57,7 +61,7 @@ showNumber m n = let s = show n in ['0' | _ <- [1..m - length s]] ++ s
 ---------------------------
 readParameters :: IO [Integer]
 ---------------------------
-readParameters = do putStr "Enter count of pareneters: "
+readParameters = do putStr "Enter count of parameters: "
                     countStr <- getLine
                     let count = read countStr
                     let m = length $ show count

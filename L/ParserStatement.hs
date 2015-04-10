@@ -100,7 +100,7 @@ ifOrWhileP = labelWithColon >>= \l -> ifWithoutL l |!| whileWtihoutL l |!| tryWi
 ---------------------------
 sqP :: Parser S
 ---------------------------
-sqP = symV '{' >> statements where
+sqP = symV '{' >> ((symV '}' >> return Skip) |!| statements) where
     
     ---------------------------
     statements :: Parser S
