@@ -1,6 +1,7 @@
 module Interpret where
 
 import Types
+import Data.Maybe
 
 ----------------------------------------------------------------------------------------
 -- INTERPRET ---------------------------------------------------------------------------
@@ -28,13 +29,9 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty empt
                                                                 >>= unZ
                                                                 >>= \z -> interpretS (s,i,z:o) (G Nothing br cn t) k
     interpretS c             (G k br cn t) (Just (Sq l r))        = interpretS c (G (addInK r k) br cn t) $ Just l
-    interpretS c@(s,i,_)   g@(G k br cn t) (Just (IfTE l e a b))  = interpretE i s e
-                                                                >>= \d -> ifTEforZ d (interpretS c g' $ Just a) 
-                                                                                     (interpretS c g' $ Just b)
-                                                                     where k'  = Just $ Break l
-                                                                           br' = substitution br l $ Just g
-                                                                           cn' = substitution cn l Nothing
-                                                                           g'  = G k' br' cn' t
+    interpretS c@(s,i,o)      gamma         (Just (IfTE e l r))   = interpretE i s e
+                                                                >>= \d -> ifTEforZ d (interpretS c gamma $ Just l) 
+                                                                                     (interpretS c gamma $ Just r)
     interpretS c@(s,i,_)   g@(G k br cn t) (Just w@(While l e b)) = interpretE i s e
                                                                 >>= \d -> ifTEforZ d (interpretS c g' $ Just b)
                                                                                      (interpretS c (G Nothing br cn t) k)
@@ -57,20 +54,28 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty empt
                                                                 >>= update i s ae
                                                                 >>= \s1 -> interpretS (s1,i,o) (G Nothing br cn t) k
 
-    interpretS c@(s,i,_)   g@(G k br cn t) (Just (Try l tr e ct)) = interpretE i s e
+    interpretS c@(s,i,_)   g@(G k br cn t) (Just (Try tr e ct))   = interpretE i s e
                                                                 >>= unZ
-                                                                >>= \z -> interpretS c (create z) (Just tr)
-                                                                     where create z = (G kt br' cn' t') where
-                                                                                kt  = Just $ Break l
-                                                                                br' = substitution br l $ Just g
-                                                                                cn' = substitution cn l Nothing
-                                                                                k'  = addInK ct kt 
-                                                                                t'  = substitution t z . Just $ G k' br' cn' t
+                                                                >>= \z -> interpretS c (create z) $ Just tr
+                                                                     where create z = (G k br cn t') where
+                                                                                k'  = addInK ct k 
+                                                                                t'  = substitution t z . Just $ G k' br cn t
 
     interpretS c@(s,i,_)     (G _ _ _  t') (Just (Throw e))       = interpretE i s e
                                                                 >>= unZ
                                                                 >>= t'
                                                                 >>= \(G k br cn t) -> interpretS c (G Nothing br cn t) k   
+
+    interpretS c@(s,i,_)   g               (Just (Switch e cs d)) = interpretE i s e
+                                                                >>= unZ
+                                                                >>= interpretS c g . result where
+                                                                      calcResult (e,c) = (interpretE i s e >>= unZ,c)
+                                                                      results = map calcResult cs
+                                                                      result z = if isJust mbRes then mbRes else Just d where 
+                                                                        mbRes = lookup (Just z) results
+
+                                                                     
+                                                                 
 
     
     interpretS _           _  _                                   = Nothing
@@ -168,8 +173,13 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty empt
     interpretE i  s (Div l r)     = interpretO (funWithoutZero div) i s l r
     interpretE i  s (Mod l r)     = interpretO (funWithoutZero mod) i s l r
 
-    interpretE i  s (And l r)     = interpretO  semAnd              i s l r
-    interpretE i  s (Or  l r)     = interpretO  semOr               i s l r
+    interpretE i  s (Pow l r)     = interpretO  semPow              i s l r
+
+    interpretE i  s (And l r)     = interpretLogOp i s 0 l r
+    interpretE i  s (Or  l r)     = interpretLogOp i s 1 l r
+
+    interpretE i  s (If c t f)    = interpretE i s c
+                                >>= \c -> ifTEforZ c (interpretE i s t) $ interpretE i s f
 
     interpretE i  s (Not e  )     = interpretE i s e 
                                 >>= unZ 
@@ -229,31 +239,38 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty empt
 
 
     ---------------------------
-    semAnd :: Z -> Z -> Maybe Z
+    interpretLogOp :: Input -> State V -> Z -> E -> E -> Maybe D    
     ---------------------------
-    semAnd 0 0 = Just 0
-    semAnd 0 1 = Just 0
-    semAnd 1 0 = Just 0
-    semAnd 1 1 = Just 1
-    semAnd _ _ = Nothing
+    interpretLogOp i s z l r = calculate l 
+                           >>= \a -> (if a == z then Just z else calculate r) 
+                           >>= return . Z where
+        
+        ---------------------------
+        calculate :: E -> Maybe Z
+        ---------------------------
+        calculate e = interpretE i s e
+                  >>= unZ
+                  >>= onlyBool
 
+        ---------------------------
+        onlyBool :: Z -> Maybe Z
+        ---------------------------
+        onlyBool 0 = Just 0
+        onlyBool 1 = Just 1
+        onlyBool _ = Nothing
 
+    
     ---------------------------
-    semOr  :: Z -> Z -> Maybe Z
+    semPow :: Z -> Z -> Maybe Z
     ---------------------------
-    semOr  0 0 = Just 0
-    semOr  0 1 = Just 1
-    semOr  1 0 = Just 1
-    semOr  1 1 = Just 1
-    semOr  _ _ = Nothing
-
+    semPow a b | b >= 0 = Just $ a ^ b
+               | True   = Nothing
 
     ---------------------------
     semNot :: Z -> Maybe Z
     ---------------------------
     semNot 0 = Just 1
     semNot 1 = Just 0
-
 
     ---------------------------
     empty :: a -> Maybe b

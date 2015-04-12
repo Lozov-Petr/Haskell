@@ -1,7 +1,6 @@
 module Main where
 
-import ParserBase (Error)
-import Types (P)
+import Types (P, Error)
 import Interpret (interpretP)
 import Parser (parser)
 import System.IO

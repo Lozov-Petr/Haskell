@@ -7,18 +7,18 @@ import ParserBase
 ---------------------------
 comment :: Parser ()
 ---------------------------
-comment = word cComment >> commentTail where
+comment = word Nothing cComment >> commentTail where
     
     ---------------------------
     commentTail :: Parser ()
     ---------------------------
-    commentTail = anySym >>= \c -> if c /= '\n' && c /= '\r' then commentTail else return () 
+    commentTail = anySym Nothing >>= \c -> if c /= '\n' && c /= '\r' then commentTail else return () 
 
 
 ---------------------------
 void :: Parser ()
 ---------------------------
-void = (oneOf voidChars >> return()) |!| comment
+void = (oneOf Nothing voidChars >> return()) |!| comment
 
 ---------------------------
 voids0 :: Parser ()
@@ -47,31 +47,31 @@ voids1Compl p = p >>= (voids1 >>) . return
 ---------------------------
 symV :: Char -> Parser Char
 ---------------------------
-symV = voids0Compl . sym
+symV = voids0Compl . sym Nothing
 
 
 ---------------------------
 wordV0 :: String -> Parser ()
 ---------------------------
-wordV0 = voids0Compl . word
+wordV0 = voids0Compl . word Nothing
 
 
 ---------------------------
 wordV1 :: String -> Parser ()
 ---------------------------
-wordV1 = voids1Compl . word
+wordV1 = voids1Compl . word Nothing
 
 
 ---------------------------
 numberV :: Parser Integer
 ---------------------------
-numberV = voids0Compl number
+numberV = voids0Compl $ number Nothing
 
 
 ---------------------------
 variableV :: Parser V
 ---------------------------
-variableV = voids0Compl variable
+variableV = voids0Compl $ variable Nothing
 
 
 ---------------------------
@@ -210,7 +210,8 @@ constUnary = getUnary constPrimary
 ---------------------------
 operators :: [([(String, E -> E -> E)], Associativity)]
 ---------------------------
-operators = [([("*",Mul),("/",Div),("%",Mod)],LeftAssoc),
+operators = [([("^",Pow)],NotAssoc),
+             ([("*",Mul),("/",Div),("%",Mod)],LeftAssoc),
              ([("+",Add),("-",Sub)],LeftAssoc),
              ([(">",Grt),("<",Les),("<=",LoE),("==",Eql),("!=",NEq),(">=",GoE)],NotAssoc),
              ([("&&",And)],RightAssoc),
@@ -218,15 +219,15 @@ operators = [([("*",Mul),("/",Div),("%",Mod)],LeftAssoc),
 
 
 ---------------------------
-constExpr :: Parser E
+constExprWithoutIf :: Parser E
 ---------------------------
-constExpr = getExprParser constUnary operators
+constExprWithoutIf = getExprParser constUnary operators
 
 
 ---------------------------
-expr :: Parser E
+exprWithoutIf :: Parser E
 ---------------------------
-expr = getExprParser unary operators
+exprWithoutIf = getExprParser unary operators
 
 
 ---------------------------
@@ -245,3 +246,25 @@ getExprParser primary list = foldl update (const primary) list $ id where
       p2 = if assoc == NotAssoc then \e -> p1 >>= return . e else result
       newHole a o = if assoc == LeftAssoc then o $ hole a else hole . (o a)
       op = foldl1 (flip (|!|)) $ map (\(s,f) -> wordV0 s >> return f) list
+
+
+---------------------------
+addIfExpr :: Parser E -> Parser E
+---------------------------
+addIfExpr p = par where
+  par = p >>= \c -> (pt >>= \t1 -> pf >>= \f1 -> let i = If c t1 f1 in (pt >>= \t2 -> pf >>= return . If i t2) |!| return i)
+                |!| return c
+  pt = symV '?' >> par
+  pf = symV ':' >> par
+
+
+---------------------------
+expr :: Parser E
+---------------------------
+expr = addIfExpr exprWithoutIf
+
+
+---------------------------
+constExpr :: Parser E
+---------------------------
+constExpr = addIfExpr constExprWithoutIf

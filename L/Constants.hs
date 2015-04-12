@@ -27,6 +27,10 @@ cCreateArray = "createArray"
 
 cSkip        = "skip"
 
+cSwitch      = "switch"
+cCase        = "case"
+cDefault     = "default"
+
 cEqual       = "="
 
 cDefLabel    = "defaultLabel"

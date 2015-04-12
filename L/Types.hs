@@ -1,7 +1,7 @@
 module Types where
 
 ----------------------------------------------------------------------------------------
--- TYPES -------------------------------------------------------------------------------
+-- TYPES FOR INTERPRETER ---------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 
 type Z = Integer
@@ -23,7 +23,9 @@ data E = Num Z   | Var V
        | Grt E E | Les E E
        | GoE E E | LoE E E
        | And E E | Or  E E
-       | Mod E E 
+       | Mod E E | Pow E E
+
+       | If E E E
 
        | EOF
        
@@ -42,10 +44,11 @@ data S = Skip
        | Read     E
        | Assign   E E
        | Sq       S S
-       | IfTE     L E S S
+       | IfTE     E S S
        | While    L E S
-       | Try      L S E S
+       | Try      S E S
        | Throw    E
+       | Switch   E [(E,S)] S
 
 data P = Program S
 
@@ -101,13 +104,17 @@ showE s (Struct ((v,e):l )) = "(Struct)--[<-]--[V]--" ++ v ++ "\n"
                         ++ newS ++ "|\n" ++ newS ++ showE newS e ++ showTail l where
     newS = s ++ "|  "
 
-showE s (Array [])        = "(Array)"
-showE s (Array (e:[]))    = "(Array)--" ++ showE (s ++ "         ") e
-showE s (Array (e:l ))    = "(Array)--" ++ showE (s ++ "|        ") e ++ showTail l where
+showE s (Array [])     = "(Array)"
+showE s (Array (e:[])) = "(Array)--" ++ showE (s ++ "         ") e
+showE s (Array (e:l )) = "(Array)--" ++ showE (s ++ "|        ") e ++ showTail l where
     showTail (e:[]) = "\n" ++ s ++ "|\n" ++ s ++ "*--" ++ showE (s ++ "   ") e
     showTail (e:l)  = "\n" ++ s ++ "|\n" ++ s ++ "*--" ++ showE (s ++ "|  ") e ++ showTail l
 
-showE s (CreateA e)       = "(CreateArray)--" ++ showE (s ++ "               ") e
+showE s (CreateA e) = "(CreateArray)--" ++ showE (s ++ "               ") e
+
+showE s (If c t f) = "(if)--<cond>--" ++ showE (s ++ "|             ") c ++ "\n" ++ s ++ "|\n" ++ s ++
+                     "<?>--" ++ showE (s ++ "|    ") t ++ "\n" ++ s ++ "\n" ++ s ++
+                     "<:>--" ++ showE (s ++ "     ") f
 
 
 showE s x = case x of
@@ -124,6 +131,7 @@ showE s x = case x of
           Mod l r -> showOp "%"  l r
           Or  l r -> showOp "||" l r
           And l r -> showOp "&&" l r
+          Pow l r -> showOp "^"  l r
   where
     showOp op l r = "(" ++ op ++ ")--" ++ showE newStr l ++ "\n" ++ s ++ "|\n" ++ s ++ showE s r where
       newStr = s ++ "|" ++ map (\_ -> ' ') [1..length op + 3]
@@ -141,14 +149,37 @@ showS s (Write e)      = "[Write]--" ++ showE (s ++ "         ") e
 showS s (Read e)       = "[Read]--" ++ showE (s ++ "        ") e
 showS s (Assign e1 e2) = "[:=]--" ++ showE (s ++ "|     ") e1 ++ "\n" ++ s ++ "|\n" ++ s ++ showE s e2
 showS s (Sq s1 s2)     = "[;]--" ++ showS (s ++ "|    ") s1 ++ "\n" ++ s ++ "|\n" ++ s ++ showS s s2
-showS s (IfTE l e t f) = "[If]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
-                         "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
+showS s (IfTE e t f)   = "[If]--<Cond>--" ++ showE (s ++ "|              ") e ++ "\n" ++ s ++ "|\n" ++ s ++ 
                          "<Then>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++ 
                          "<Else>--" ++ showS (s ++ "        ") f
 showS s (While l e b)  = "[While]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
                          "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++  s ++
                          "<Body>--" ++ showS (s ++ "        ") b
-showS s (Try l t e c)  = "[Try]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
-                         "<Body>--" ++ showS (s ++ "|       ") t ++ "\n" ++ s ++ "|\n" ++ s ++
+showS s (Try t e c)    = "[Try]--<Body>--" ++ showS (s ++ "|              ") t ++ "\n" ++ s ++ "|\n" ++ s ++
                          "<Value>--" ++ showE (s ++ "|        ") e ++ "\n" ++ s ++ "|\n" ++ s ++
                          "<Catch>--" ++ showS (s ++ "         ") c 
+showS s (Switch e c d) = "[Switch]--<Expr>--" ++ showE (s ++ "|                 ") e ++ "\n"++ s ++ "|\n" ++ s ++
+                         cases c ++ "<Default>--" ++ showS (s ++ "           ") d where
+
+    cases ((e,c):cs) = "<Case>--<Const>--" ++ showE (s ++ "|                ") e ++ "\n" ++ s ++ "|\n" ++ s ++
+                       "<Statement>--" ++ showS (s ++ "|            ") c ++ "\n" ++ s ++ "|\n" ++ s ++ cases cs
+    cases _          = ""
+
+
+
+----------------------------------------------------------------------------------------
+-- TYPES FOR PARSER --------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+
+type ErrorMessage = Maybe String
+
+type Error = (ErrorMessage,Int,Int)
+type Str   = (String,Int,Int)
+
+newtype Parser a = P (Str -> Either (a, Str) Error)
+
+instance Monad Parser where
+  return a = P (Left . (,) a)
+  (P p) >>= f = P $ next f . p where  
+    next f (Left (a,s)) = let (P p) = f a in p s
+    next _ (Right err)  = Right err 

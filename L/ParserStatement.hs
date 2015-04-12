@@ -72,10 +72,35 @@ throwP = wordV0 cThrow >> exprInBrackets >>= \e -> semicolon >> return (Throw e)
 
 
 ---------------------------
-ifWithoutL :: L -> Parser S
+ifP :: Parser S
 ---------------------------
-ifWithoutL l = wordV1 cIf >> expr >>= \e -> wordV1 cThen >> statement >>=
-	     \tr -> opt (wordV1 cElse >> statement) >>= return . IfTE l e tr . unMaybe Skip
+ifP = wordV1 cIf >> expr >>= \e -> wordV1 cThen >> statement >>=
+	     \tr -> opt (wordV1 cElse >> statement) >>= return . IfTE e tr . unMaybe Skip
+
+
+
+---------------------------
+tryP :: Parser S
+---------------------------
+tryP = wordV1 cTry >> statementWithoutTry >>= catchesP where
+
+    ---------------------------
+    catchesP :: S -> Parser S
+    ---------------------------
+    catchesP s = wordV0 cCatch >> constExprInBrackets >>= \e -> statement >>= 
+    	    \c -> let s1 = Try s e c in catchesP s1 |!| return s1
+
+
+---------------------------
+switchP :: Parser S
+---------------------------
+switchP = wordV0 cSwitch >> exprInBrackets >>= \e -> many0 caseP >>= 
+	      \c -> wordV1 cDefault >> statement >>= return . Switch e c where
+
+    ---------------------------
+    caseP :: Parser (E, S)
+    ---------------------------
+    caseP = wordV0 cCase >> constExprInBrackets >>= \e -> statement >>= return . (,) e
 
 
 ---------------------------
@@ -85,16 +110,9 @@ whileWtihoutL l = wordV1 cWhile >> expr >>= \e -> wordV1 cDo >> statement >>= re
 
 
 ---------------------------
-tryWithoutL :: L -> Parser S
+ciclesP :: Parser S
 ---------------------------
-tryWithoutL l = wordV1 cTry >> statement >>= \t -> wordV0 cCatch 
-                            >> constExprInBrackets >>= \e -> statement >>= return . Try l t e
-
-
----------------------------
-ifOrWhileP :: Parser S
----------------------------
-ifOrWhileP = labelWithColon >>= \l -> ifWithoutL l |!| whileWtihoutL l |!| tryWithoutL l
+ciclesP = labelWithColon >>= whileWtihoutL
 
 
 ---------------------------
@@ -109,9 +127,15 @@ sqP = symV '{' >> ((symV '}' >> return Skip) |!| statements) where
 
 
 ---------------------------
+statementWithoutTry :: Parser S
+---------------------------
+statementWithoutTry =  skipP  |!| readP   |!| assignP 
+                   |!| writeP |!| breakP  |!| continueP 
+                   |!| throwP |!| sqP     |!| abortP
+                   |!| ifP    |!| switchP |!| ciclesP
+
+
+---------------------------
 statement :: Parser S
 ---------------------------
-statement =  skipP  |!| readP  |!| assignP 
-         |!| writeP |!| breakP |!| continueP 
-         |!| throwP |!| sqP    |!| abortP 
-         |!| ifOrWhileP 
+statement =  tryP |!| statementWithoutTry 
