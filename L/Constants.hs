@@ -3,6 +3,7 @@ module Constants where
 cIf          = "if"
 cThen        = "then"
 cElse        = "else"
+cElif        = "elif"
 
 cWhile       = "while"
 cDo          = "do"

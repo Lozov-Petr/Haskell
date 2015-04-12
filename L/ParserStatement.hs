@@ -74,9 +74,15 @@ throwP = wordV0 cThrow >> exprInBrackets >>= \e -> semicolon >> return (Throw e)
 ---------------------------
 ifP :: Parser S
 ---------------------------
-ifP = wordV1 cIf >> expr >>= \e -> wordV1 cThen >> statement >>=
-	     \tr -> opt (wordV1 cElse >> statement) >>= return . IfTE e tr . unMaybe Skip
-
+ifP = wordV1 cIf >> expr >>= \e -> wordV1 cThen >> statement >>= \tr -> ifTail (IfTE e tr) where
+            
+            ---------------------------
+            ifTail :: (S -> S) -> Parser S
+            ---------------------------
+            ifTail hole =  (wordV1 cElse >> statement >>= return . hole) 
+                       |!| (wordV1 cElif >> expr >>= \e -> wordV1 cThen >> 
+                                            statement >>= \s -> ifTail (hole . IfTE e s))
+                       |!| return (hole Skip)
 
 
 ---------------------------
@@ -129,10 +135,10 @@ sqP = symV '{' >> ((symV '}' >> return Skip) |!| statements) where
 ---------------------------
 statementWithoutTry :: Parser S
 ---------------------------
-statementWithoutTry =  skipP  |!| readP   |!| assignP 
-                   |!| writeP |!| breakP  |!| continueP 
-                   |!| throwP |!| sqP     |!| abortP
-                   |!| ifP    |!| switchP |!| ciclesP
+statementWithoutTry =  skipP   |!| readP   |!| ifP
+                   |!| writeP  |!| breakP  |!| continueP 
+                   |!| throwP  |!| sqP     |!| abortP
+                   |!| switchP |!| assignP |!| ciclesP
 
 
 ---------------------------
