@@ -4,39 +4,48 @@ import Types (P, Error)
 import Interpret (interpretP)
 import Parser (parser)
 import System.IO
+import System.Environment (getArgs)
+import Control.Monad (when)
+
+help = "\n    help: L [path] [-c] [-t]\n"
 
 ---------------------------
 main :: IO ()
 ---------------------------
 main = do hSetBuffering stdout NoBuffering
 
-          putStr "Enter path of file: "
-          
-          path <- getLine
-          
-          printSeparate
+          args <- getArgs
 
-          code <- readFile path
-          
-          putStrLn "Code:"
-          putStrLn $ shiftCode code
+          if null args then putStrLn help else realMain args
 
-          printSeparate
-          
-          treeToResult $ parser (code ++ "\n")
+                  
+---------------------------
+realMain :: [String] -> IO ()
+---------------------------
+realMain (path:params) = do let mustShowCode = elem "-c" params
+                                mustShowTree = elem "-t" params
+                                
+                            code <- readFile path
+                            
+                            printSeparate
+
+                            when mustShowCode (putStrLn "Code:" >> putStrLn (shiftCode code) >> printSeparate)
+                                    
+                            treeToResult mustShowTree $ parser (code ++ "\n")
+
 
 ---------------------------
-treeToResult :: Either P Error -> IO ()
+treeToResult :: Bool -> Either P Error -> IO ()
 ---------------------------
-treeToResult (Left p) = do print p
-                           printSeparate
-                           parameters <- readParameters
-                           printSeparate
-                           putStrLn . resultToString $ interpretP p parameters
-                           printSeparate
+treeToResult mst (Left p) = do when mst (print p >> printSeparate)
+                               
+                               parameters <- readParameters
+                               printSeparate
+                               putStrLn . resultToString $ interpretP p parameters
+                               printSeparate
 
-treeToResult (Right (Just err,i,j)) = do putStr (show (i,j) ++ " Parsing error: " ++ err)
-treeToResult (Right (Nothing, i,j)) = do putStr (show (i,j) ++ " Parsing error: Unknown error")
+treeToResult _ (Right (Just err,i,j)) = do putStr (show (i,j) ++ " Parsing error: " ++ err)
+treeToResult _ (Right (Nothing, i,j)) = do putStr (show (i,j) ++ " Parsing error: Unknown error")
 ---------------------------
 printSeparate :: IO ()
 ---------------------------

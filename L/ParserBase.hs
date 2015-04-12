@@ -2,7 +2,7 @@ module ParserBase where
 
 import Messages
 import Types
-import Data.Maybe
+import Data.Maybe(isJust)
 
 --------------------------
 anySym :: ErrorMessage -> Parser Char

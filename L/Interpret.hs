@@ -1,7 +1,7 @@
 module Interpret where
 
 import Types
-import Data.Maybe
+import Data.Maybe(isJust)
 
 ----------------------------------------------------------------------------------------
 -- INTERPRET ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty empt
 
     interpretE i  s (Inv e  )     = interpretE i s e
                                 >>= unZ
-                                >>= Just . Z . (0-)
+                                >>= Just . Z . negate
 
     interpretE i  s (CreateA e)   = interpretE i s e
                                 >>= unZ
