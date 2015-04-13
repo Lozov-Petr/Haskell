@@ -5,73 +5,59 @@ import Constants
 import ParserBase
 
 ---------------------------
-comment :: Parser ()
+voids :: Parser Bool
 ---------------------------
-comment = word Nothing cComment >> commentTail where
+voids = (void >> voids0 >> return True) |!| return False where
+ 
+  ---------------------------
+  comment :: Parser ()
+  ---------------------------
+  comment = word Nothing cComment >> commentTail
     
-    ---------------------------
-    commentTail :: Parser ()
-    ---------------------------
-    commentTail = anySym Nothing >>= \c -> if c /= '\n' && c /= '\r' then commentTail else return () 
+  ---------------------------
+  commentTail :: Parser ()
+  ---------------------------
+  commentTail = anySym Nothing >>= \c -> if c /= '\n' && c /= '\r' then commentTail else return () 
+
+  ---------------------------
+  void :: Parser ()
+  ---------------------------
+  void = (oneOf Nothing voidChars >> return()) |!| comment
+
+  ---------------------------
+  voids0 :: Parser ()
+  ---------------------------
+  voids0 = void >> voids0 |!| return () 
 
 
 ---------------------------
-void :: Parser ()
+voidsCompl :: Parser a -> Parser a
 ---------------------------
-void = (oneOf Nothing voidChars >> return()) |!| comment
-
----------------------------
-voids0 :: Parser ()
----------------------------
-voids0 = void >> voids0 |!| return () 
+voidsCompl p = p >>= \a -> voids >> return a
 
 
 ---------------------------
-voids1 :: Parser ()
+symV :: Char -> Parser Bool
 ---------------------------
-voids1 = void >> voids0
+symV c = sym Nothing c >> voids
 
 
 ---------------------------
-voids0Compl :: Parser a -> Parser a
+wordV :: String -> Parser Bool
 ---------------------------
-voids0Compl p = p >>= (voids0 >>) . return
-
-
----------------------------
-voids1Compl :: Parser a -> Parser a
----------------------------
-voids1Compl p = p >>= (voids1 >>) . return
-
-
----------------------------
-symV :: Char -> Parser Char
----------------------------
-symV = voids0Compl . sym Nothing
-
-
----------------------------
-wordV0 :: String -> Parser ()
----------------------------
-wordV0 = voids0Compl . word Nothing
-
-
----------------------------
-wordV1 :: String -> Parser ()
----------------------------
-wordV1 = voids1Compl . word Nothing
+wordV s = word Nothing s >> voids
 
 
 ---------------------------
 numberV :: Parser Integer
 ---------------------------
-numberV = voids0Compl $ number Nothing
+numberV = voidsCompl $ number Nothing
 
 
 ---------------------------
 variableV :: Parser V
 ---------------------------
-variableV = voids0Compl $ variable Nothing
+variableV = voidsCompl $ variable Nothing
 
 
 ---------------------------
@@ -89,13 +75,13 @@ var = variableV >>= return . Var
 ---------------------------
 eof :: Parser E
 ---------------------------
-eof = wordV0 cEOF >> return EOF
+eof = wordV cEOF >> return EOF
 
 
 ---------------------------
 createArray :: Parser E
 ---------------------------
-createArray = voids0Compl $ wordV0 cCreateArray >> exprInBrackets >>= \e -> return (CreateA e)
+createArray = voidsCompl $ wordV cCreateArray >> exprInBrackets >>= \e -> return (CreateA e)
 
 
 ---------------------------
@@ -108,12 +94,12 @@ unMaybe def _        = def
 ---------------------------
 struct :: Parser E
 ---------------------------
-struct = symV '{' >> opt (oneElem >>= \h -> many0 (symV ',' >> oneElem) 
-                  >>= return . (h:)) >>= \m -> symV '}' >> return (Struct $ unMaybe [] m) where
+struct = symV '{' >> opt (oneElem >>= \h -> many0 (symV ',' >> oneElem) >>= return . (h:)) 
+     >>= \m -> symV '}' >> return (Struct $ unMaybe [] m) where
     ---------------------------        
     oneElem :: Parser (V, E)
     ---------------------------
-    oneElem = variableV >>= \v -> wordV0 cEqual >> expr >>= return . (,) v
+    oneElem = variableV >>= \v -> wordV cEqual >> expr >>= return . (,) v
 
 
 ---------------------------
@@ -123,21 +109,21 @@ array = symV '[' >> opt (expr >>= \e -> many0 (symV ',' >> expr) >>= return . (e
 
 
 ---------------------------
-getExprInBrackets :: Parser E -> Parser E
+inBrackets :: Parser a -> Parser a
 ---------------------------
-getExprInBrackets p = symV '(' >> p >>= \e -> symV ')' >> return e
+inBrackets p = symV '(' >> p >>= \a -> symV ')' >> return a
 
 
 ---------------------------
 exprInBrackets :: Parser E
 ---------------------------
-exprInBrackets = getExprInBrackets expr
+exprInBrackets = inBrackets expr
 
 
 ---------------------------
 constExprInBrackets :: Parser E
 ---------------------------
-constExprInBrackets = getExprInBrackets constExpr
+constExprInBrackets = inBrackets constExpr
 
 
 ---------------------------
@@ -192,7 +178,7 @@ variableWithSuff = getParserWithSuff var
 getUnary :: Parser E -> Parser E
 ---------------------------
 getUnary p = p |!| unary' ("-", Inv) |!| unary' ("!", Not) where
-    unary' (s, f) = wordV0 s >> p >>= return . f
+    unary' (s, f) = wordV s >> p >>= return . f
 
 
 ---------------------------
@@ -245,7 +231,7 @@ getExprParser primary list = foldl update (const primary) list $ id where
       p1 = acc id 
       p2 = if assoc == NotAssoc then \e -> p1 >>= return . e else result
       newHole a o = if assoc == LeftAssoc then o $ hole a else hole . (o a)
-      op = foldl1 (flip (|!|)) $ map (\(s,f) -> wordV0 s >> return f) list
+      op = foldl1 (flip (|!|)) $ map (\(s,f) -> wordV s >> return f) list
 
 
 ---------------------------

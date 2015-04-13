@@ -8,6 +8,9 @@ cElif        = "elif"
 cWhile       = "while"
 cDo          = "do"
 
+cRepeat      = "repeat"
+cUntil       = "until"    
+
 cRead        = "read"
 cWrite       = "write"
 

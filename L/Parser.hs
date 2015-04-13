@@ -8,7 +8,7 @@ import ParserStatement
 ---------------------------
 program :: Parser P
 ---------------------------
-program = voids0 >> statement >>= return . Program
+program = voids >> statement >>= return . Program
 
 ---------------------------
 parser :: String -> Either P Error

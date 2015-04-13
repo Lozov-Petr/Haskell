@@ -46,6 +46,7 @@ data S = Skip
        | Sq       S S
        | IfTE     E S S
        | While    L E S
+       | Repeat   L S E
        | Try      S E S
        | Throw    E
        | Switch   E [(E,S)] S
@@ -155,6 +156,9 @@ showS s (IfTE e t f)   = "[If]--<Cond>--" ++ showE (s ++ "|              ") e ++
 showS s (While l e b)  = "[While]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
                          "<Cond>--" ++ showE (s ++ "|       ") e ++ "\n" ++ s ++ "|\n" ++  s ++
                          "<Body>--" ++ showS (s ++ "        ") b
+showS s (Repeat l b e) = "[Repeat]--<Label>--" ++ l ++ "\n" ++ s ++ "|\n" ++ s ++
+                         "<Body>--" ++ showS (s ++ "|       ") b ++ "\n" ++ s ++ "|\n" ++ s ++
+                         "<Cond>--" ++ showE (s ++ "        ") e
 showS s (Try t e c)    = "[Try]--<Body>--" ++ showS (s ++ "|              ") t ++ "\n" ++ s ++ "|\n" ++ s ++
                          "<Value>--" ++ showE (s ++ "|        ") e ++ "\n" ++ s ++ "|\n" ++ s ++
                          "<Catch>--" ++ showS (s ++ "         ") c 
