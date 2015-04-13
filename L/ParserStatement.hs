@@ -63,19 +63,40 @@ abortP = wordV cAbort >> semicolon >> return Abort
 ---------------------------
 readP :: Parser S
 ---------------------------
-readP = wordV cRead >>= varAfterWord >>= \e -> semicolon >> return (Read e)
-
-
----------------------------
-assignP :: Parser S
----------------------------
-assignP = variableWithSuff >>= \l -> wordV cEqual >> expr >>= \r -> semicolon >> return (Assign l r)
+readP = wordV cRead >> symV '(' >> tailRead id where
+  
+  ---------------------------
+  tailRead :: (S -> S) -> Parser S
+  ---------------------------
+  tailRead h = variableWithSuff >>= \v -> (symV ')' >> semicolon >> return (h $ Read v))
+                                      |!| (symV ',' >> tailRead (h . Sq (Read v)))
 
 
 ---------------------------
 writeP :: Parser S
 ---------------------------
-writeP = wordV cWrite >>= exprAfterWord >>= \e -> semicolon >> return (Write e)
+writeP = wordV cWrite >> symV '(' >> tailWrite id where
+
+  ---------------------------
+  tailWrite :: (S -> S) -> Parser S
+  ---------------------------
+  tailWrite h = expr >>= \e -> (symV ')' >> semicolon >> return (h $ Write e))
+                           |!| (symV ',' >> tailWrite (h . Sq (Write e)))
+
+---------------------------
+assignP :: Parser S
+---------------------------
+assignP = variableWithSuff >>= \l -> assign l >>= \f -> expr >>= \r -> semicolon >> return (Assign l (f r)) where
+
+  ---------------------------
+  assign :: E -> Parser (E -> E)
+  ---------------------------
+  assign l = foldl1 (|!|) $ map (\(a,b) -> wordV a >> return b) assigns where
+
+    assigns = [(cAssign,    id)   , (cAddAssign, Add l), 
+               (cSubAssign, Sub l), (cMulAssign, Mul l),
+               (cDivAssign, Div l), (cModAssign, Mod l),
+               (cPowAssign, Pow l)] 
 
 
 ---------------------------
@@ -170,7 +191,7 @@ repeatWtihoutL l = wordV cRepeat >>= statementAfterWord >>= \s ->
 forWithoutL :: L -> Parser S
 ---------------------------
 forWithoutL l =  word Nothing cFor >> void >> voids >> variableV >>= 
-           \c -> wordV cEqual >> expr >>=
+           \c -> wordV cAssign >> expr >>=
            \b -> wordV cTo >>= exprAfterWord >>=
            \e -> opt (wordV cStep >>= exprAfterWord) >>=
            \s -> wordV cDo >>= statementAfterWord >>= 

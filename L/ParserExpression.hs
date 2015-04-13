@@ -101,7 +101,7 @@ struct = symV '{' >> opt (oneElem >>= \h -> many0 (symV ',' >> oneElem) >>= retu
     ---------------------------        
     oneElem :: Parser (V, E)
     ---------------------------
-    oneElem = variableV >>= \v -> wordV cEqual >> expr >>= return . (,) v
+    oneElem = variableV >>= \v -> wordV cAssign >> expr >>= return . (,) v
 
 
 ---------------------------

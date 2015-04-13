@@ -1,4 +1,4 @@
-module Main where
+module L where
 
 import Types (P, Error)
 import Interpret (interpretP)

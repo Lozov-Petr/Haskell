@@ -39,7 +39,13 @@ cSwitch      = "switch"
 cCase        = "case"
 cDefault     = "default"
 
-cEqual       = "="
+cAssign       = "="
+cAddAssign    = "+="
+cSubAssign    = "-="
+cMulAssign    = "*="
+cDivAssign    = "/="
+cModAssign    = "%="
+cPowAssign    = "^="
 
 cDefLabel    = "defaultLabel"
 
