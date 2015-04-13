@@ -63,7 +63,7 @@ abortP = wordV cAbort >> semicolon >> return Abort
 ---------------------------
 readP :: Parser S
 ---------------------------
-readP = wordV cRead >>= varAfterWord >>= \e -> semicolon >> return (Read e) where
+readP = wordV cRead >>= varAfterWord >>= \e -> semicolon >> return (Read e)
 
 
 ---------------------------
@@ -167,9 +167,20 @@ repeatWtihoutL l = wordV cRepeat >>= statementAfterWord >>= \s ->
 
 
 ---------------------------
+forWithoutL :: L -> Parser S
+---------------------------
+forWithoutL l =  word Nothing cFor >> void >> voids >> variableV >>= 
+           \c -> wordV cEqual >> expr >>=
+           \b -> wordV cTo >>= exprAfterWord >>=
+           \e -> opt (wordV cStep >>= exprAfterWord) >>=
+           \s -> wordV cDo >>= statementAfterWord >>= 
+                 return . For l c b e (unMaybe (Num 1) s)
+
+
+---------------------------
 ciclesP :: Parser S
 ---------------------------
-ciclesP = labelWithColon >>= \l -> whileWtihoutL l |!| repeatWtihoutL l
+ciclesP = labelWithColon >>= \l -> whileWtihoutL l |!| repeatWtihoutL l |!| forWithoutL l
 
 
 ---------------------------

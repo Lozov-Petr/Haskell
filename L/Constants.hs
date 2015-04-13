@@ -9,7 +9,11 @@ cWhile       = "while"
 cDo          = "do"
 
 cRepeat      = "repeat"
-cUntil       = "until"    
+cUntil       = "until"  
+
+cFor         = "for"
+cTo          = "to"  
+cStep        = "step"
 
 cRead        = "read"
 cWrite       = "write"

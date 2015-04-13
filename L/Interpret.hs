@@ -23,64 +23,78 @@ interpretP (Program p) i = interpretS (empty, i, []) (G Nothing empty empty empt
     ---------------------------    
     interpretS :: C -> Gamma -> Maybe S -> Maybe C
     ---------------------------
-    interpretS c             (G Nothing _ _ _)  Nothing            = Just c
-    interpretS c             (G k br cn t) (Just  Skip)            = interpretS c (G Nothing br cn t) k
-    interpretS (s,i,o)       (G k br cn t) (Just (Write e))        = interpretE i s e
-                                                                 >>= unZ
-                                                                 >>= \z -> interpretS (s,i,z:o) (G Nothing br cn t) k
-    interpretS c             (G k br cn t) (Just (Sq l r))         = interpretS c (G (addInK r k) br cn t) $ Just l
-    interpretS c@(s,i,o)      gamma         (Just (IfTE e l r))    = interpretE i s e
-                                                                 >>= \d -> ifTEforZ d (interpretS c gamma $ Just l) 
-                                                                                      (interpretS c gamma $ Just r)
-    interpretS c@(s,i,_)   g@(G k br cn t) (Just w@(While l e b))  = interpretE i s e
-                                                                 >>= \d -> ifTEforZ d (interpretS c g' $ Just b)
-                                                                                      (interpretS c (G Nothing br cn t) k)
-                                                                      where kw  = addInK w k
-                                                                            k'  = Just $ Continue l
-                                                                            br' = substitution br l $ Just g
-                                                                            cn' = substitution cn l . Just $ G kw br cn t
-                                                                            g'  = G k' br' cn' t
+    interpretS c             (G Nothing _ _ _)  Nothing             = Just c
+    interpretS c             (G k br cn t) (Just  Skip)             = interpretS c (G Nothing br cn t) k
+    interpretS (s,i,o)       (G k br cn t) (Just (Write e))         = interpretE i s e
+                                                                  >>= unZ
+                                                                  >>= \z -> interpretS (s,i,z:o) (G Nothing br cn t) k
+    interpretS c             (G k br cn t) (Just (Sq l r))          = interpretS c (G (addInK r k) br cn t) $ Just l
+    interpretS c@(s,i,o)      gamma         (Just (IfTE e l r))     = interpretE i s e
+                                                                  >>= \d -> ifTEforZ d (interpretS c gamma $ Just l) 
+                                                                                       (interpretS c gamma $ Just r)
+    interpretS c@(s,i,_)   g@(G k br cn t) (Just w@(While l e b))   = interpretE i s e
+                                                                  >>= \d -> ifTEforZ d (interpretS c g' $ Just b)
+                                                                                       (interpretS c (G Nothing br cn t) k)
+                                                                       where kw  = addInK w k
+                                                                             k'  = Just $ Continue l
+                                                                             br' = substitution br l $ Just g
+                                                                             cn' = substitution cn l . Just $ G kw br cn t
+                                                                             g'  = G k' br' cn' t
 
-    interpretS c           g@(G k br cn t) (Just w@(Repeat l b e)) = interpretS c g' $ Just b where
-                                                                       ne  = Not e
-                                                                       kw  = addInK (While l ne b) k
-                                                                       k'  = Just $ Continue l 
-                                                                       br' = substitution br l $ Just g
-                                                                       cn' = substitution cn l . Just $ G kw br cn t
-                                                                       g'  = G k' br' cn' t
+    interpretS c           g@(G k br cn t) (Just (Repeat l b e))    = interpretS c g' $ Just b where
+                                                                        ne  = Not e
+                                                                        kw  = addInK (While l ne b) k
+                                                                        k'  = Just $ Continue l 
+                                                                        br' = substitution br l $ Just g
+                                                                        cn' = substitution cn l . Just $ G kw br cn t
+                                                                        g'  = G k' br' cn' t
 
-    interpretS c             (G _ br' _ _) (Just (Break l))        = br' l
-                                                                 >>= \(G k br cn t) -> interpretS c (G Nothing br cn t) k
+    interpretS c@(s,i,_)     (G k br cb t) (Just (For l v x y z b)) =       interpretE i s x >>= unZ 
+                                                                  >>= \x -> interpretE i s y >>= unZ
+                                                                  >>= \y -> interpretE i s z >>= unZ
+                                                                  >>= \z -> result x y z where
+                                                                      result x y z = interpretS c g $ Just a where
+                                                                        v' = Var v
+                                                                        a  = Assign v' (Num x)
+                                                                        e  = (if z >= 0 then LoE else GoE) v' $ Num y
+                                                                        u  = Assign v' . Add v' $ Num z
+                                                                        w  = While l e $ Sq b u
+                                                                        g  = G (addInK w k) br cb t
 
-    interpretS c             (G _ _ cn' _) (Just (Continue l))     = cn' l
-                                                                 >>= \(G k br cn t) -> interpretS c (G Nothing br cn t) k
 
-    interpretS c@(s,z:i,o)   (G k br cn t) (Just (Read ae))        = update i s ae (Z z)
-                                                                 >>= \s1 -> interpretS (s1,i,o) (G Nothing br cn t) k
 
-    interpretS c@(s,i,o)     (G k br cn t) (Just (Assign ae e))    = interpretE i s e
-                                                                 >>= update i s ae
-                                                                 >>= \s1 -> interpretS (s1,i,o) (G Nothing br cn t) k
+    interpretS c             (G _ br' _ _) (Just (Break l))         = br' l
+                                                                  >>= \(G k br cn t) -> interpretS c (G Nothing br cn t) k
 
-    interpretS c@(s,i,_)   g@(G k br cn t) (Just (Try tr e ct))    = interpretE i s e
-                                                                 >>= unZ
-                                                                 >>= \z -> interpretS c (create z) $ Just tr
-                                                                      where create z = (G k br cn t') where
-                                                                                 k'  = addInK ct k 
-                                                                                 t'  = substitution t z . Just $ G k' br cn t
+    interpretS c             (G _ _ cn' _) (Just (Continue l))      = cn' l
+                                                                  >>= \(G k br cn t) -> interpretS c (G Nothing br cn t) k
 
-    interpretS c@(s,i,_)     (G _ _ _  t') (Just (Throw e))        = interpretE i s e
-                                                                 >>= unZ
-                                                                 >>= t'
-                                                                 >>= \(G k br cn t) -> interpretS c (G Nothing br cn t) k   
+    interpretS c@(s,z:i,o)   (G k br cn t) (Just (Read ae))         = update i s ae (Z z)
+                                                                  >>= \s1 -> interpretS (s1,i,o) (G Nothing br cn t) k
 
-    interpretS c@(s,i,_)   g               (Just (Switch e cs d))  = interpretE i s e
-                                                                 >>= unZ
-                                                                 >>= interpretS c g . result where
-                                                                       calcResult (e,c) = (interpretE i s e >>= unZ,c)
-                                                                       results = map calcResult cs
-                                                                       result z = if isJust mbRes then mbRes else Just d where 
-                                                                         mbRes = lookup (Just z) results
+    interpretS c@(s,i,o)     (G k br cn t) (Just (Assign ae e))     = interpretE i s e
+                                                                  >>= update i s ae
+                                                                  >>= \s1 -> interpretS (s1,i,o) (G Nothing br cn t) k
+
+    interpretS c@(s,i,_)   g@(G k br cn t) (Just (Try tr e ct))     = interpretE i s e
+                                                                  >>= unZ
+                                                                  >>= \z -> interpretS c (create z) $ Just tr
+                                                                       where create z = (G k br cn t') where
+                                                                                  k'  = addInK ct k 
+                                                                                  t'  = substitution t z . Just $ G k' br cn t
+
+    interpretS c@(s,i,_)     (G _ _ _  t') (Just (Throw e))         = interpretE i s e
+                                                                  >>= unZ
+                                                                  >>= t'
+                                                                  >>= \(G k br cn t) -> interpretS c (G Nothing br cn t) k   
+
+    interpretS c@(s,i,_)   g               (Just (Switch e cs d))   = interpretE i s e
+                                                                  >>= unZ
+                                                                  >>= interpretS c g . result where
+                                                                        calcResult (e,c) = (interpretE i s e >>= unZ,c)
+                                                                        results = map calcResult cs
+                                                                        result z = if isJust mbRes then mbRes else Just d where 
+                                                                          mbRes = lookup (Just z) results
     
     interpretS _           _  _                                   = Nothing
 

@@ -4,11 +4,12 @@ import Types
 import Constants
 import ParserBase
 
+
 ---------------------------
-voids :: Parser Bool
+void :: Parser ()
 ---------------------------
-voids = (void >> voids0 >> return True) |!| return False where
- 
+void = (oneOf Nothing voidChars >> return()) |!| comment where
+  
   ---------------------------
   comment :: Parser ()
   ---------------------------
@@ -19,10 +20,11 @@ voids = (void >> voids0 >> return True) |!| return False where
   ---------------------------
   commentTail = anySym Nothing >>= \c -> if c /= '\n' && c /= '\r' then commentTail else return () 
 
-  ---------------------------
-  void :: Parser ()
-  ---------------------------
-  void = (oneOf Nothing voidChars >> return()) |!| comment
+
+---------------------------
+voids :: Parser Bool
+---------------------------
+voids = (void >> voids0 >> return True) |!| return False where
 
   ---------------------------
   voids0 :: Parser ()
