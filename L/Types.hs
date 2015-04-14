@@ -51,6 +51,7 @@ data S = Skip
        | Try      S E S
        | Throw    E
        | Switch   E [(E,S)] S
+       | Exit
 
 data P = Program S
 
@@ -61,7 +62,7 @@ type C = (State V, Input, Output)
 
 type K = Maybe S
 
-data Gamma = G K (L -> Maybe Gamma) (L -> Maybe Gamma) (Z -> Maybe Gamma)
+data Gamma = G K (L -> Maybe Gamma) (L -> Maybe Gamma) (Z -> Maybe Gamma) (Maybe Gamma)
 
 data Associativity = LeftAssoc | RightAssoc | NotAssoc deriving Eq
 
@@ -90,7 +91,7 @@ showE  :: String -> E -> String
 ---------------------------
 showE _ (Num a) = "(N)--" ++ show a
 showE _ (Var s) = "(V)--" ++ s
-showE _ (EOF)   = "(EOF)"
+showE _  EOF    = "(EOF)"
 
 showE s (Not e) = "(!)--" ++ showE (s ++ "     ") e
 showE s (Inv e) = "(~)--" ++ showE (s ++ "     ") e
@@ -145,8 +146,9 @@ showE s x = case x of
 ---------------------------
 showS  :: String -> S -> String
 ---------------------------
-showS _ (Abort)           = "[Abort]"
-showS _ (Skip)            = "[Skip]"
+showS _  Abort            = "[Abort]"
+showS _  Skip             = "[Skip]"
+showS _  Exit             = "[Exit]"
 showS _ (Continue l)      = "[Continue]--<Label>--" ++ l
 showS _ (Break l)         = "[Break]--<Label>--" ++ l
 showS s (Throw e)         = "[Throw]--" ++ showE (s ++ "         ") e

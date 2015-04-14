@@ -1,4 +1,4 @@
-module Main where
+module L where
 
 import Types (P, Error)
 import Interpret (interpretP)
@@ -7,7 +7,7 @@ import System.IO
 import System.Environment (getArgs)
 import Control.Monad (when)
 
-help = "\n    help: L [path] [ -c | -t | -ni ]\n"
+help = "\n    help: L [path] [-c] [-t]\n"
 
 ---------------------------
 main :: IO ()
@@ -22,24 +22,24 @@ main = do hSetBuffering stdout NoBuffering
 ---------------------------
 realMain :: [String] -> IO ()
 ---------------------------
-realMain (path:params) = do let mustShowCode  =       elem "-c"  params
-                                mustShowTree  =       elem "-t"  params
-                                mustInterpret = not $ elem "-ni" params
+realMain (path:params) = do let mustShowCode  = elem "-c" params
+                                mustShowTree  = elem "-t" params
+                                mustInterpret = elem "-i" params
                                 
                             code <- readFile path
+                            
+                            printSeparate
 
-                            when mustShowCode (printSeparate >> putStrLn "Code:" >> putStrLn (shiftCode code))
+                            when mustShowCode (putStrLn "Code:" >> putStrLn (shiftCode code) >> printSeparate)
                                     
                             treeToResult mustShowTree mustInterpret $ parser (code ++ "\n")
-
-                            when (mustShowTree || mustShowCode || mustInterpret) printSeparate
 
 
 ---------------------------
 treeToResult :: Bool -> Bool -> Either P Error -> IO ()
 ---------------------------
-treeToResult mst mi (Left p) = do when mst $ printSeparate >> print p
-                                  when mi  $ runInterpret p
+treeToResult mst mi (Left p) = do when mst (print p >> printSeparate)
+                                  when mi   runInterpret p
 treeToResult _ _ (Right (Just err,i,j)) = do putStr (show (i,j) ++ " Parsing error: " ++ err)
 treeToResult _ _ (Right (Nothing, i,j)) = do putStr (show (i,j) ++ " Parsing error: Unknown error")
 
@@ -51,12 +51,13 @@ printSeparate = putStrLn $ map (const '-') [1..100]
 
 
 ---------------------------
-runInterpret :: P -> IO ()
+runInterpret :: Program -> IO ()
 ---------------------------
-runInterpret p = do printSeparate
-                    parameters <- readParameters
+runInterpret p = do parameters <- readParameters
                     printSeparate
                     putStrLn . resultToString $ interpretP p parameters
+                    printSeparate
+
 
 ---------------------------
 shiftCode :: String -> String

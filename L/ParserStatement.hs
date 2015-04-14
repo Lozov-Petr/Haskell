@@ -19,12 +19,6 @@ afterWord a b w = if w then a else b
 
 
 ---------------------------
-varAfterWord :: Bool -> Parser E
----------------------------
-varAfterWord = afterWord variableWithSuff $ inBrackets variableWithSuff
-
-
----------------------------
 exprAfterWord :: Bool -> Parser E
 ---------------------------
 exprAfterWord = afterWord expr exprInBrackets
@@ -147,7 +141,7 @@ tryP = wordV cTry >>= afterWord statementWithoutTry sqP >>= catchesP where
     ---------------------------
     catchesP :: S -> Parser S
     ---------------------------
-    catchesP s = wordV cCatch >> constExprInBrackets >>= \e -> statement >>= 
+    catchesP s = wordV cCatch >>= constExprAfterWord >>= \e -> symV ':' >> statement >>= 
     	    \c -> let s1 = Try s e c in catchesP s1 |!| return s1
 
 
